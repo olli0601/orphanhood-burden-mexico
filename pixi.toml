@@ -1,0 +1,94 @@
+[workspace]
+name = "orphanhood-burden-mexico"
+version = "0.1.0"
+description = "Orphanhood incidence and prevalence in Mexico from vital statistics (delay-adjusted nowcasting + standardized orphanhood estimation)"
+channels = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+# ============================================================================
+# R dependencies (conda-forge, pre-compiled where possible)
+# Python (NowcastPNN) is intentionally excluded — see scripts-py/requirements.txt.
+# ============================================================================
+[dependencies]
+# R and compiler toolchain (nimble / source pkgs need compilers)
+r-base = ">=4.3"
+compilers = "*"
+make = "*"
+cmake = "*"
+
+# System libraries for spatial/geometry packages (sf, spdep, tmap)
+udunits2 = "*"
+
+# CmdStan (cmdstanr is installed separately from R-universe — see tasks)
+cmdstan = "==2.37.0"
+
+# --- Core data manipulation / IO ---
+"r-tidyverse" = "*"      # dplyr, ggplot2, readr, purrr, stringr, tibble, tidyr, forcats, lubridate, tidyselect
+"r-data.table" = "*"
+"r-arrow" = "*"          # parquet IO
+"r-readxl" = "*"
+"r-writexl" = "*"
+"r-foreign" = "*"
+"r-reshape2" = "*"
+"r-glue" = "*"
+"r-janitor" = "*"
+"r-broom" = "*"
+
+# --- Statistics / models ---
+"r-mass" = "*"
+"r-mgcv" = "*"           # GAM nowcast
+"r-vgam" = "*"
+"r-gtools" = "*"
+"r-coda" = "*"
+"r-matrixstats" = "*"
+"r-future.apply" = "*"
+"r-yardstick" = "*"
+"r-hmisc" = "*"
+"r-stringi" = "*"
+
+# --- Bayesian / Stan post-processing ---
+"r-posterior" = "*"
+"r-bayesplot" = "*"
+
+# --- Spatial ---
+"r-sf" = "*"
+"r-s2" = "*"
+"r-units" = "*"
+"r-spdep" = "*"
+"r-tmap" = "*"
+
+# --- Plotting / palettes ---
+"r-scales" = "*"
+"r-patchwork" = "*"
+"r-gridextra" = "*"
+"r-rcolorbrewer" = "*"
+"r-viridis" = "*"
+"r-ggnewscale" = "*"
+"r-polychrome" = "*"
+
+# --- Deep learning (HEAVY: pulls tensorflow). Used only in
+#     scripts-R/ch4_nowcasting.R. Comment out for a lean R env. ---
+"r-keras" = "*"
+
+# ============================================================================
+# Single R-only environment
+# ============================================================================
+[environments]
+default = { solve-group = "default" }
+
+# ============================================================================
+# Tasks
+# ============================================================================
+[tasks]
+# cmdstanr is not on conda-forge — install from the Stan R-universe.
+install-cmdstanr = """Rscript -e "install.packages('cmdstanr', repos = c('https://stan-dev.r-universe.dev', 'https://cloud.r-project.org'))" """
+
+# CRAN-only R packages (not on conda-forge): nimble (MCMC, compiles from
+# source — uses the conda compiler toolchain) and ungroup (age regrouping).
+install-extra = """Rscript -e "pkgs <- c('nimble', 'ungroup'); miss <- pkgs[!pkgs %in% rownames(installed.packages())]; if (length(miss)) install.packages(miss, repos = 'https://cloud.r-project.org')" """
+
+# Verify R + CmdStan with the bundled bernoulli example.
+verify-r = """Rscript -e "library(cmdstanr); cat('CmdStan version:', cmdstan_version(), '\\n'); file <- file.path(cmdstan_path(), 'examples', 'bernoulli', 'bernoulli.stan'); mod <- cmdstan_model(file, force_recompile = TRUE); fit <- mod\\$sample(data = list(N = 10, y = c(0,1,0,0,0,0,0,0,0,1)), seed = 123, chains = 2, parallel_chains = 1, refresh = 500); cat('\\n✓ R + CmdStan verified.\\n')" """
+
+# Complete R setup.
+setup = { depends-on = ["install-cmdstanr", "install-extra", "verify-r"] }

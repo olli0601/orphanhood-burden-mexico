@@ -4,6 +4,14 @@ input-data-raw/
 # OS cruft
 .DS_Store
 
-# Large files exceeding GitHub limits (regenerable; keep out of git)
-R/nowcast_bayes_yearly_NOWCAST_ONLY_outputs.rds
-R/fertility_df.csv
+# Generated outputs (plots, model objects, etc.)
+output/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pt
+
+# Pixi environment
+.pixi/
+pixi.lock

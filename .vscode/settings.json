@@ -1,0 +1,37 @@
+{
+    "r.bracketedPaste": true,
+    "r.lsp.diagnostics": false,
+    "r.lsp.enabled": false,
+    "r.rterm.mac": "/Users/or105/git/orphanhood-burden-mexico/.vscode/orphanhood_pixi_r.sh",
+    "r.rterm.option": [
+        "--no-save",
+        "--no-restore"
+    ],
+    "terminal.integrated.gpuAcceleration": "off",
+    "window.restoreWindows": "all",
+    "terminal.integrated.env.osx": {
+        "PIXI_PROJECT_ROOT": "${workspaceFolder}"
+    },
+    "terminal.integrated.profiles.osx": {
+        "R (orphanhood pixi)": {
+            "path": "/Users/or105/git/orphanhood-burden-mexico/.vscode/orphanhood_pixi_r.sh",
+            "icon": "graph"
+        },
+        "zsh (orphanhood pixi)": {
+            "path": "zsh",
+            "args": [
+                "-c",
+                "cd ${workspaceFolder} && pixi shell"
+            ],
+            "icon": "terminal-bash"
+        },
+        "zsh": {
+            "path": "zsh",
+            "icon": "terminal"
+        }
+    },
+    "terminal.integrated.defaultProfile.osx": "zsh (orphanhood pixi)",
+    "cSpell.enableFiletypes": [
+        "!python"
+    ]
+}
