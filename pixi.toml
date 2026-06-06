@@ -66,10 +66,6 @@ cmdstan = "==2.37.0"
 "r-ggnewscale" = "*"
 "r-polychrome" = "*"
 
-# --- Deep learning (HEAVY: pulls tensorflow). Used only in
-#     scripts-R/ch4_nowcasting.R. Comment out for a lean R env. ---
-"r-keras" = "*"
-
 # ============================================================================
 # Single R-only environment
 # ============================================================================
