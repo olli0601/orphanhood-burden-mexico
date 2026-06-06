@@ -1,0 +1,9 @@
+# Raw input data (large, downloaded via R/get_input_data_raw.R — not version controlled)
+input-data-raw/
+
+# OS cruft
+.DS_Store
+
+# Large files exceeding GitHub limits (regenerable; keep out of git)
+R/nowcast_bayes_yearly_NOWCAST_ONLY_outputs.rds
+R/fertility_df.csv

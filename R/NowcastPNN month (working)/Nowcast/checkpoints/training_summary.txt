@@ -1,0 +1,29 @@
+NEGATIVE BINOMIAL BIRTH NOWCASTING MODEL
+==================================================
+
+Training completed: 2025-08-10 10:52:29
+Training period: 1990-2015
+Model architecture: BirthNowcastPNN with NegativeBinomial distribution
+Municipality-specific parameters: 520 α_l values
+CORRECTED Variance formula: Var = μ + α_l·μ²
+
+PERFORMANCE METRICS:
+Test Loss: 230.4692
+MAE: 241.12 births
+RMSE: 558.40 births
+MAPE: 83.7%
+Mean Overdispersion: 80.261x
+
+ALPHA PARAMETERS:
+Mean: 0.052781
+Std: 0.001187
+Range: [0.050026, 0.059216]
+
+FAST PLOTTING:
+Pre-computed data available: YES
+Training curves: 14 epochs
+Test predictions: 1762 samples
+
+MODEL FILES:
+Final model: ./checkpoints/negative_binomial_model_final.pt
+Best checkpoint: ./checkpoints/best_model.pt
