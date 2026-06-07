@@ -40,7 +40,21 @@
       "Bash(sed -i '' 's|load\\(\"input-data-processed/fert.RDS\"\\)|fert <- readRDS\\(\"input-data-processed/fert.RDS\"\\)|' scripts-R/ch3_020_clean_fertility.R)",
       "Bash(sed -i '' 's|fert <- fert <- readRDS|fert <- readRDS|' scripts-R/ch3_020_clean_fertility.R)",
       "Bash(sed -i '' 's|df_fert <- left_join\\(fert, index_marg, by=c\\(\"group_id\", \"year\"\\)\\)|df_fert <- left_join\\(fert, index_marg |> mutate\\(year = as.character\\(year\\)\\), by=c\\(\"group_id\", \"year\"\\)\\)|' scripts-R/ch3_020_clean_fertility.R)",
-      "Bash(sed -i '' 's|df_fert_std <- left_join\\(df_fert_std, index_marg, by=c\\(\"group_id\", \"year\"\\)\\)|df_fert_std <- left_join\\(df_fert_std, index_marg |> mutate\\(year = as.character\\(year\\)\\), by=c\\(\"group_id\", \"year\"\\)\\)|' scripts-R/ch3_020_clean_fertility.R)"
+      "Bash(sed -i '' 's|df_fert_std <- left_join\\(df_fert_std, index_marg, by=c\\(\"group_id\", \"year\"\\)\\)|df_fert_std <- left_join\\(df_fert_std, index_marg |> mutate\\(year = as.character\\(year\\)\\), by=c\\(\"group_id\", \"year\"\\)\\)|' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(awk 'NR>169 && /\\\\bpopulation\\\\b/ && !/population_new_mun/ {print NR\": \"$0}' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(awk 'NR>177 && /\\\\bpopulation\\\\b/ && !/population_new_mun/ {print NR\": \"$0}' scripts-R/ch3_010_clean_mortality.R)",
+      "Bash(awk 'NR>53 && NR<260 && /grouped_municipality_50000 <-/' scripts-R/ch1_060_prepare_datasets.R)",
+      "Bash(sed -n '270,292p' scripts-R/ch1_040_clean_mort.R)",
+      "Bash(sed -n '150,158p' scripts-R/ch1_060_prepare_datasets.R)",
+      "Bash(awk '/from ch1_040_clean_mort.R/{f=1;next} /from ch1_005/{f=0} f' old-R/archived_population_reshape.R)",
+      "Bash(awk '{o=gsub\\(/\\\\\\(/,\"\\(\"\\); c=gsub\\(/\\\\\\)/,\"\\)\"\\); print \"open\",o,\"close\",c}')",
+      "Bash(awk '{print \"open\",gsub\\(/\\\\\\(/,\"\\(\"\\),\"close\",gsub\\(/\\\\\\)/,\"\\)\"\\)}')",
+      "Bash(awk '{print gsub\\(/{/,\"{\"\\),gsub\\(/}/,\"}\"\\)}')",
+      "Bash(awk '{print gsub\\(/\\\\[/,\"[\"\\),gsub\\(/\\\\]/,\"]\"\\)}')",
+      "Bash(sed -n '/^index <- IMM_2020 |>/,/drop_na\\(IM\\)/p' scripts-R/ch1_040_clean_mort.R)",
+      "Bash(sed -n '/^geo_info <- index |> dplyr::select\\(state/,/saveRDS\\(geo_info/p' scripts-R/ch1_040_clean_mort.R)",
+      "Bash(sed -n '33,47p' scripts-R/ch1_050_clean_fert.R)",
+      "Bash(sed -n '84,98p' scripts-R/ch1_050_clean_fert.R)"
     ]
   }
 }
