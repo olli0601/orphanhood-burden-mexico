@@ -164,16 +164,6 @@ geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
 #--------------------------------- POPULATION ----------------------------------
 
 ################################################################################
-population <- readRDS("input-data-processed/population.RDS")
-
-population <- left_join(population, 
-                        geo_info %>% dplyr::select(mun, group_id), 
-                        by="mun")
-
-population_new_mun <- population |>
-  group_by(group_id, age, sex, year) |>
-  summarise(tot_population = sum(population),  .groups = "drop")
-
 population_new_mun <- readRDS("input-data-processed/population_new_mun.RDS")
 mort <- left_join(deaths_new_mun %>% dplyr::select(group_id, year, sex, age, tot_deaths, year_reg), 
                   population_new_mun, 
@@ -685,3 +675,4 @@ if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
 }
 
 print("Exploratory Data Analysis plots completed!")
+

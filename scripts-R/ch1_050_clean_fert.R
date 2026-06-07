@@ -3,9 +3,11 @@
 # Clean and harmonise the per-year INEGI registered-birth files into birth
 # counts by municipality x parent-sex x 5-year age group x year.
 #
-# Reads : input-data-raw/births/ (per-year), population workbook, IMM_2020,
-#         input-data-processed/geo_info.RDS (ch1_040)
-# Writes: input-data-processed/{fert_YYYY.RDS, fert.RDS}
+# Loads the supplied per-year fertility (input-data-processed/fertility datasets/),
+# joins population + IMM_2020 + geo_info.
+# Reads : input-data-processed/fertility datasets/*.RDS, geo_info.RDS (ch1_040),
+#         input-data-raw/population/...1_Grupo_Quinq..., input-data-raw/marginalization/IMM_2020.xls
+# Writes: input-data-processed/fert.RDS (municipality level)
 # Run after: ch1_040
 # =============================================================================
 
@@ -22,26 +24,19 @@ library(ggplot2)
 library(gridExtra)
 library(foreign)
 source("R/preprocess_fertility.R"); source("R/preprocess_mortality.R"); source("R/rates.R"); source("R/plots.R")
+source("R/marginalization.R")
+source("R/load_year_panels.R")
 
 # Load the SUPPLIED per-year fertility datasets into fert_YYYY objects (the
 # output of preprocess_fertility() on the raw INEGI files). Lets the pipeline
 # start from input-data-processed/ without the raw files. (To regenerate from
 # raw instead, loop the INEGI files through preprocess_fertility().)
 # Run ch1_005_bootstrap_from_processed.R first.
-fertility_rds_files <- list.files("input-data-processed/fertility datasets",
-                                  pattern = "[.]RDS$", full.names = TRUE)
-for (file in fertility_rds_files) {
-  year_reg     <- str_extract(basename(file), "[0-9]{4}")
-  df_processed <- readRDS(file)
-  if (!"year_reg" %in% names(df_processed)) df_processed$year_reg <- year_reg
-  assign(paste0("fert_", year_reg), df_processed)
-}
+fert_panel <- load_year_panels("fertility datasets")
 
 ## BARPLOT 
 # Get all objects whose names start with "mort_"
-fert_list <- mget(ls(pattern = "^fert_"))
-# Merge them into a single data frame
-all_fert <- bind_rows(fert_list)
+all_fert <- fert_panel
 
 # Summarize data: count occurrences of each 'year' within each 'year_reg'
 data_summary_fert <- all_fert %>%
@@ -79,17 +74,9 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
 
 print(p_pie)
 
-# Correct the 2-digit occurrence year in the early files (1985-1997 store
-# `year` as 2 digits, e.g. 90 -> 1990). Named to avoid the ^fert_ mget sweep.
-early_fert_names <- intersect(paste0("fert_", 1985:1997), ls(pattern = "^fert_[0-9]{4}$"))
-for (element_name in early_fert_names) {
-  element <- get(element_name) |>
-    mutate(year = as.numeric(paste0("19", str_pad(as.character(year), width = 2, side = "left", pad = "0"))))
-  assign(element_name, element)
-}
 
 # Combine and aggregate all available years (1985-2024).
-births <- bind_rows(mget(ls(pattern = "^fert_[0-9]{4}$"))) |>
+births <- fert_panel |>
   group_by(year, sex, age, mun) |>
   summarise(births = sum(births), .groups = "drop") |>
   filter(year >= 1985, year <= 2024)
@@ -159,20 +146,8 @@ fert <- full_join(births, population, by = c("mun", "year", "sex", "age"))
 fert$births[is.na(fert$births)] <- 0
 
 #marginality index
-IMM_2020 <- read_excel("input-data-raw/marginalization/IMM_2020.xls", skip = 5)
 
-index <- IMM_2020 |> dplyr::select("CVE_ENT", "NOM_ENT", "CVE_MUN", "NOM_MUN","POB_TOT",
-                                   "IM_2020", "IMN_2020", "GM_2020") |>
-  rename(
-    mun = CVE_MUN,
-    state = CVE_ENT,
-    mun_name = NOM_MUN,
-    state_name = NOM_ENT,
-    population = POB_TOT,
-    IM = IM_2020,
-    IMN = IMN_2020,
-    GM = GM_2020
-  ) |> drop_na(IM)
+index <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
 
 index <- index[-1,]
 
@@ -201,7 +176,6 @@ saveRDS(fert, file = "input-data-processed/fert.RDS")
 
 geo_info <- readRDS("input-data-processed/geo_info.RDS")
 #-----------------------. Standardized fertility rate --------------------------
-geo_info <- readRDS(file = "input-data-processed/geo_info.RDS")
 std_raw <- compute_std_rate(fert); std_raw <- std_raw %>% filter(year == 2020) %>% dplyr::select(-year)
 std_raw <- std_raw %>% left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% left_join(y = index, by = "mun") %>% mutate(capital = factor(capital))
 std_raw <- std_raw %>% rename("mpi"="IMN")
@@ -399,3 +373,5 @@ for (yr in years) {
 library(readr)
 grupos_poblacionales_2020 <- read_csv("input-data-raw/grupos_poblacionales_2020.csv")
 }
+
+

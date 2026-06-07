@@ -4,10 +4,12 @@
 # counts by municipality x sex x 5-year age group x year; build the population
 # and geographic-lookup tables used downstream.
 #
-# Reads : input-data-raw/deaths/ (per-year), population workbook, IMM_2020,
-#         input-data-processed/grouped_municipality.RDS (ch2)
-# Writes: input-data-processed/{mort_YYYY.RDS, mort.RDS, population.RDS, geo_info.RDS}
-# Run after: ch1_020 (and ch2_010 for the municipality grouping)
+# Loads the supplied per-year mortality (input-data-processed/mortality datasets/),
+# joins population (R/load_population) + IMM_2020 + the ch2 grouping.
+# Reads : input-data-processed/mortality datasets/*.RDS, grouped_municipality_50000.RDS (ch2),
+#         input-data-raw/population/...1_Grupo_Quinq..., input-data-raw/marginalization/IMM_2020.xls
+# Writes: input-data-processed/{mort.RDS, population.RDS, geo_info.RDS}
+# Run after: ch1_005, ch2_010
 # =============================================================================
 
 #############################################
@@ -27,6 +29,9 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 source("R/preprocess_mortality.R"); source("R/rates.R"); source("R/plots.R")
+source("R/load_population.R")
+source("R/marginalization.R")
+source("R/load_year_panels.R")
 
 # Load the SUPPLIED per-year mortality datasets into mort_YYYY objects. These
 # are the output of preprocess_mortality() on the raw INEGI files; loading them
@@ -34,21 +39,12 @@ source("R/preprocess_mortality.R"); source("R/rates.R"); source("R/plots.R")
 # (To regenerate from raw instead, loop the INEGI files through
 # preprocess_mortality() as in ch1_005 / the git history.)
 # Run ch1_005_bootstrap_from_processed.R first.
-mortality_rds_files <- list.files("input-data-processed/mortality datasets",
-                         pattern = "[.]RDS$", full.names = TRUE)
-for (file in mortality_rds_files) {
-  year_reg     <- str_extract(basename(file), "[0-9]{4}")
-  df_processed <- readRDS(file)
-  if (!"year_reg" %in% names(df_processed)) df_processed$year_reg <- year_reg
-  assign(paste0("mort_", year_reg), df_processed)
-}
+mort_panel <- load_year_panels("mortality datasets")
 
 
 ## BARPLOT 
 # Get all objects whose names start with "mort_"
-mort_list <- mget(ls(pattern = "^mort_"))
-# Merge them into a single data frame
-all_mort <- bind_rows(mort_list)
+all_mort <- mort_panel
 
 # Summarize data: count occurrences of each 'year' within each 'year_reg'
 data_summary <- all_mort %>%
@@ -112,26 +108,8 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
 print(p_pie)
 
 
-mort_names <- c("mort_1997", "mort_1996", "mort_1995", "mort_1994", 
-                "mort_1993", "mort_1992", "mort_1991", "mort_1990")
-
-
-
-for(name in mort_names){
-  df <- get(name)       
-  df <- correct_mortality_year(df) 
-  assign(name, df)      
-}
-
-
 # Combine the cleaned datasets together and aggregate counts in case of duplicate groups
-deaths <- rbind(mort_2023, mort_2022, mort_2021, mort_2020, mort_2019, 
-                mort_2018, mort_2017, mort_2016, mort_2015, mort_2014, 
-                mort_2013, mort_2012, mort_2011, mort_2010, mort_2009, 
-                mort_2008, mort_2007, mort_2006, mort_2005, mort_2004,
-                mort_2003, mort_2002, mort_2001, mort_2000, mort_1999,
-                mort_1998, mort_1997, mort_1996, mort_1995, mort_1994,
-                mort_1993, mort_1992, mort_1991, mort_1990) |>
+deaths <- mort_panel |>
   group_by(year, sex, age, mun, year_reg) |>
   summarise(deaths = sum(deaths), .groups = "drop")
 
@@ -239,39 +217,7 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor
 ##############################################
 
 # Population
-X1_Grupo_Quinq_00_RM <- read_excel("input-data-raw/population/00_Republica_mexicana/1_Grupo_Quinq_00_RM.xlsx")
-
-population <- X1_Grupo_Quinq_00_RM |> rename(
-  mun = CLAVE,
-  state = CLAVE_ENT,
-  mun_name = NOM_MUN,
-  state_name = NOM_ENT,
-  sex = SEXO,
-  year = AÑO
-) |> pivot_longer(
-  cols = starts_with("POB_"), values_to = "population", names_to = "age"
-) |> mutate(
-  sex = case_when(
-    sex == "HOMBRES" ~ "male",
-    sex == "MUJERES" ~ "female"
-  )
-)
-
-population$mun <- str_pad(population$mun, 5, pad = "0")
-
-population <- population |> filter(year >= 1990 & year < 2024)
-
-population <- population |>
-  mutate(
-    age = str_replace(age, "POB_", "")
-  ) |>
-  mutate(
-    age = str_replace(age, "_", "-")
-  ) |> filter(age != "TOTAL" & age != "00-04" & age != "05-09" & age!= "85-mm" & age != "80-84")
-
-population$sex <- as.factor(population$sex)
-population$age <- as.factor(population$age)
-population$mun <- as.factor(population$mun)
+population <- load_population(keep_child = FALSE)
 
 saveRDS(population, "input-data-processed/population.RDS")
 mort <- full_join(deaths |> select(mun, group_id, year, sex, age, year_reg, deaths, tot_deaths), population, by = c("mun", "year", "sex", "age"))
@@ -280,28 +226,8 @@ mort$tot_deaths[is.na(mort$tot_deaths)] <- 0
 mort$deaths[is.na(mort$deaths)] <- 0
 
 #marginality index
-IMM_2020 <- read_excel("input-data-raw/marginalization/IMM_2020.xls", skip = 5)
 
-index <- IMM_2020 |>
-  rename(
-    mun = CVE_MUN,
-    state = CVE_ENT,
-    mun_name = NOM_MUN,
-    state_name = NOM_ENT,
-    population = POB_TOT,
-    illiterate_pct = ANALF, 
-    no_basic_edu_pct = SBASC, 
-    no_drainage_pct = OVSDE, 
-    no_electricity_pct = OVSEE, 
-    no_piped_water_pct = OVSAE, 
-    dirt_floors_pct = OVPT, 
-    overcrowding_pct = VHAC, 
-    small_towns_pct = PL.5000, 
-    low_income_pct = PO2SM, 
-    IM = IM_2020,
-    IMN = IMN_2020,
-    GM = GM_2020
-  ) |> drop_na(IM)
+index <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
 
 index <- index[-1,]
 
@@ -330,21 +256,7 @@ saveRDS(mort, file = "input-data-processed/mort.RDS")
 
 
 
-geo_info <- index |> dplyr::select(state, state_name, mun, mun_name)
-
-capitals <- c("Aguascalientes", "Mexicali", "La Paz", "Campeche", "Tuxtla Gutiérrez", 
-              "Chihuahua", "Saltillo", "Colima", "Durango", "Guanajuato", 
-              "Chilpancingo de los Bravo", "Pachuca de Soto", "Guadalajara",
-              "Toluca", "Morelia", "Cuernavaca", "Tepic", "Monterrey", "Oaxaca de Juárez", 
-              "Puebla", "Querétaro", "Othón P. Blanco", "San Luis Potosí", 
-              "Culiacán", "Hermosillo", "Centro", "Victoria", 
-              "Tlaxcala", "Xalapa", "Mérida", "Zacatecas")
-
-geo_info <- geo_info |> mutate(
-  capital = if_else(mun_name %in% capitals, 1, 0)
-)
-
-geo_info$capital[geo_info$state_name == "Guanajuato" & geo_info$mun_name == "Victoria"] <- 0
+geo_info <- build_geo_info(index)
 
 
 saveRDS(geo_info, file = "input-data-processed/geo_info.RDS")
@@ -445,4 +357,8 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
+
+
+
+
 

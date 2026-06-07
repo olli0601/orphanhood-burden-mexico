@@ -13,6 +13,8 @@
 # =============================================================================
 suppressMessages({
   library(dplyr); library(tidyr); library(stringr); library(readxl); library(purrr)
+source("R/load_population.R")
+source("R/marginalization.R")
 })
 
 proc <- "input-data-processed"
@@ -35,44 +37,19 @@ saveRDS(deaths, file.path(proc, "deaths.RDS"))
 cat(sprintf("births: %d rows | deaths: %d rows\n", nrow(births), nrow(deaths)))
 
 # --- 2. Population (from CONAPO quinquennial workbook) -----------------------
-X1_Grupo_Quinq_00_RM <- read_excel(
-  "input-data-raw/population/00_Republica_mexicana/1_Grupo_Quinq_00_RM.xlsx")
-population <- X1_Grupo_Quinq_00_RM |>
-  rename(mun = CLAVE, state = CLAVE_ENT, mun_name = NOM_MUN,
-         state_name = NOM_ENT, sex = SEXO, year = AÑO) |>
-  pivot_longer(cols = starts_with("POB_"), values_to = "population", names_to = "age") |>
-  mutate(sex = case_when(sex == "HOMBRES" ~ "male", sex == "MUJERES" ~ "female")) |>
-  mutate(mun = str_pad(mun, 5, pad = "0")) |>
-  filter(year >= 1990 & year < 2024) |>
-  mutate(age = str_replace(str_replace(age, "POB_", ""), "_", "-")) |>
-  filter(!age %in% c("TOTAL", "00-04", "05-09", "85-mm", "80-84")) |>
-  mutate(sex = as.factor(sex), age = as.factor(age), mun = as.factor(mun))
+population <- load_population(keep_child = FALSE)
 saveRDS(population, file.path(proc, "population.RDS"))
 cat(sprintf("population: %d rows\n", nrow(population)))
 
 # --- 3. Marginalization index + geo_info (from CONAPO IMM 2020) --------------
-IMM_2020 <- read_excel("input-data-raw/marginalization/IMM_2020.xls", skip = 5)
-index <- IMM_2020 |>
-  rename(mun = CVE_MUN, state = CVE_ENT, mun_name = NOM_MUN, state_name = NOM_ENT,
-         population = POB_TOT, illiterate_pct = ANALF, no_basic_edu_pct = SBASC,
-         no_drainage_pct = OVSDE, no_electricity_pct = OVSEE, no_piped_water_pct = OVSAE,
-         dirt_floors_pct = OVPT, overcrowding_pct = VHAC, small_towns_pct = `PL.5000`,
-         low_income_pct = PO2SM, IM = IM_2020, IMN = IMN_2020, GM = GM_2020) |>
-  drop_na(IM)
+index <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
 index <- index[-1, ]
 saveRDS(index, file.path(proc, "marg_index.RDS"))
 
-geo_info <- index |> dplyr::select(state, state_name, mun, mun_name)
-capitals <- c("Aguascalientes", "Mexicali", "La Paz", "Campeche", "Tuxtla Gutiérrez",
-              "Chihuahua", "Saltillo", "Colima", "Durango", "Guanajuato",
-              "Chilpancingo de los Bravo", "Pachuca de Soto", "Guadalajara",
-              "Toluca", "Morelia", "Cuernavaca", "Tepic", "Monterrey", "Oaxaca de Juárez",
-              "Puebla", "Querétaro", "Othón P. Blanco", "San Luis Potosí",
-              "Culiacán", "Hermosillo", "Centro", "Victoria",
-              "Tlaxcala", "Xalapa", "Mérida", "Zacatecas")
-geo_info <- geo_info |> mutate(capital = if_else(mun_name %in% capitals, 1, 0))
-geo_info$capital[geo_info$state_name == "Guanajuato" & geo_info$mun_name == "Victoria"] <- 0
+geo_info <- build_geo_info(index)
 saveRDS(geo_info, file.path(proc, "geo_info.RDS"))
 cat(sprintf("geo_info: %d municipalities | marg_index: %d\n", nrow(geo_info), nrow(index)))
 
 cat("\nBootstrap complete. Intermediates written to input-data-processed/.\n")
+
+

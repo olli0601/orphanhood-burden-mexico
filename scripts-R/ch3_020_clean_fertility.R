@@ -157,15 +157,6 @@ geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
 #--------------------------------- POPULATION ----------------------------------
 
 ################################################################################
-population <- readRDS("input-data-processed/population.RDS")
-
-population <- left_join(population, 
-                        geo_info %>% dplyr::select(mun, group_id), 
-                        by="mun")
-population_new_mun <- population |>
-  group_by(group_id, age, sex, year) |>
-  summarise(tot_population = sum(population),  .groups = "drop")
-
 population_new_mun <- readRDS("input-data-processed/population_new_mun.RDS")
 fert <- left_join(births_new_mun %>% dplyr::select(group_id, year, sex, age, year_reg, tot_births), 
                   population_new_mun, 
@@ -371,5 +362,6 @@ ggplot(df_fert_std, aes(x = year, y = std_fert_rate, color = as.factor(poverty_q
     y = "Average Standardized Fertility Rate",
     color = "Poverty Quintile"
   )
+
 
 

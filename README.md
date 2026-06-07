@@ -5,6 +5,62 @@ statistics, with delay-adjusted nowcasting of births and standardized adjustment
 double and prior orphanhood. Based on Elsa Farinella's EPFL Master's thesis (2025),
 supervised by Oliver Ratmann (external) and Victor Panaretos (EPFL).
 
+## Repository layout
+
+- `R/` — shared helper functions (sourced, not run directly): preprocessing, rate
+  computation, plotting, municipality grouping, `load_population()`.
+- `scripts-R/` — the analysis pipeline, ordered `chN_0X0_*.R` by chapter and
+  dependency (run these).
+- `scripts-py/` — the NowcastPNN (Python) model.
+- `src/stan/` — Stan model files. `old-R/` — archived / superseded code.
+- `input-data-raw/` — downloaded source data (gitignored bulk). `input-data-processed/`
+  — per-year `fert_YYYY`/`mort_YYYY` + derived intermediates.
+- `output/` — generated figures/tables (gitignored), in per-chapter subfolders.
+
+## Environment (pixi)
+
+The R toolchain is managed with [pixi](https://pixi.sh) (`pixi.toml`).
+
+```bash
+pixi install            # solve + install R, CmdStan, spatial/stats packages
+pixi run setup          # install cmdstanr (R-universe) + nimble + ungroup (CRAN), verify CmdStan
+```
+
+Run any script in the environment with `pixi run Rscript <path>`. Open an R REPL with
+`pixi run R` (or radian). Python (NowcastPNN) deps are in `scripts-py/requirements.txt`.
+
+## Running the pipeline
+
+Scripts are numbered by dependency order. Either supply the raw INEGI files and run
+from scratch, or start from the per-year datasets already in `input-data-processed/`.
+
+**0. Get raw inputs** (optional — population/marginalization/geometry + INEGI births
+2017–2024 auto-download; deaths and pre-2017 births are manual, see Data below):
+
+```bash
+pixi run Rscript scripts-R/ch1_010_get_input_data_raw.R
+```
+
+**1. Chapter 1–3 (data → harmonised panels), in order:**
+
+```bash
+pixi run Rscript scripts-R/ch1_005_bootstrap_from_processed.R   # per-year -> births/deaths/population/geo_info/marg_index
+pixi run Rscript scripts-R/ch1_040_clean_mort.R                 # -> mort.RDS
+pixi run Rscript scripts-R/ch1_050_clean_fert.R                 # -> fert.RDS (mun level)
+pixi run Rscript scripts-R/ch2_010_group_mun.R                 # municipality aggregation (519 units)
+pixi run Rscript scripts-R/ch1_060_prepare_datasets.R          # new-municipality panels + marginalization
+pixi run Rscript scripts-R/ch3_010_clean_mortality.R          # mort.RDS (new-mun)
+pixi run Rscript scripts-R/ch3_020_clean_fertility.R          # fert.RDS (new-mun)
+```
+
+`ch1_005` must run first — it breaks the ch1↔ch2 circular dependency by building
+`population`/`geo_info` before the grouping. Chapters 4 (nowcasting, `scripts-R/ch4_*`
++ `scripts-py/`) and 5 (orphanhood, `scripts-R/ch5_*`) follow.
+
+> Note: some Chapter 3–5 scripts still require raw INEGI extraction for the
+> orphans/long/monthly variants and a few EDA inputs (`type_of_mun.csv`); these are
+> work in progress.
+
 ## Data
 
 All inputs are harmonized to a common municipality–sex–age–year resolution. Ages are

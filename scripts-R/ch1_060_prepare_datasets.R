@@ -4,11 +4,15 @@
 # to the new (merged) municipalities, build the long birth/death panels, the
 # monthly-birth nowcasting input, and the area-type lookups.
 #
-# Reads : input-data-raw/ (per-year births/deaths, IMM 2010/2015/2020, type_of_mun),
-#         input-data-processed/{grouped_municipality_50000, aggregated_muni_50000,
-#         population_new_mun, index_new_mun}.RDS (ch2)
-# Writes: input-data-processed/{deaths, births, *_new_mun, geo_info*, population*,
-#         mpi_*, marg_index, month_*, monthly_births.parquet, rural_urban_area.parquet}
+# Loads supplied per-year births/deaths + IMM 2010/2015/2020 + ch2 grouping;
+# builds the new-municipality panels and marginalization. The raw-only variants
+# (mort_df/deaths_df_long via orphans/long; monthly/long fertility; mun-level
+# index_marg/im.tmp) are guarded/skipped pending raw INEGI extraction.
+# Reads : input-data-processed/{fertility,mortality} datasets/, grouped_municipality_50000.RDS,
+#         aggregated_muni_50000.RDS, geo_info.RDS, input-data-raw/marginalization/IMM_{2020.xls,DP2_2015.xlsx,DP2_2010.xlsx}
+# Writes: input-data-processed/{deaths, births, births_new_mun, geo_info, geo_info_new_mun,
+#         population, population_new_mun, mpi_mun, mpi_classified, mpi_new_mun, mpi_imputed,
+#         marg_index, index_new_mun, index_marg}.RDS
 # Run after: ch1_050, ch2_010
 # =============================================================================
 
@@ -25,24 +29,19 @@ library(sf)
 library(Polychrome)
 source("R/preprocess_fertility.R"); source("R/preprocess_mortality.R"); source("R/preprocess_orphans.R")
 library(arrow)
+source("R/load_population.R")
+source("R/marginalization.R")
+source("R/load_year_panels.R")
 #############################################
 
 # MORTALITY
 
 #############################################
 # ---- DEATHS: load the supplied per-year mortality (preprocess_mortality output)
-mortality_rds_files <- list.files("input-data-processed/mortality datasets", pattern = "[.]RDS$", full.names = TRUE)
-for (file in mortality_rds_files) {
-  year_reg <- str_extract(basename(file), "[0-9]{4}")
-  d <- readRDS(file); if (!"year_reg" %in% names(d)) d$year_reg <- year_reg
-  assign(paste0("mort_", year_reg), d)
-}
-for (nm in intersect(paste0("mort_", 1985:1997), ls(pattern = "^mort_[0-9]{4}$"))) assign(nm, correct_year(get(nm)))
-deaths <- bind_rows(mget(ls(pattern = "^mort_[0-9]{4}$"))) |>
+deaths <- load_year_panels("mortality datasets") |>
   group_by(year, sex, age, mun, year_reg) |>
   summarise(deaths = sum(deaths), .groups = "drop")
 saveRDS(deaths, file = "input-data-processed/deaths.RDS")
-rm(list = ls(pattern = "^mort_[0-9]{4}$"))
 
 # ---- mort_df (single-age, orphans) and deaths_df_long require the raw INEGI
 #      files via preprocess_orphans() / preprocess_mortality_long(); the supplied
@@ -58,46 +57,12 @@ aggregated_muni_50000 <- readRDS("input-data-processed/aggregated_muni_50000.RDS
 
 ################################################################################
 
-IMM_2020 <- read_excel("input-data-raw/marginalization/IMM_2020.xls", skip = 5)
 
-index <- IMM_2020 |>
-  rename(
-    mun = CVE_MUN,
-    state = CVE_ENT,
-    mun_name = NOM_MUN,
-    state_name = NOM_ENT,
-    population = POB_TOT,
-    illiterate_pct = ANALF, 
-    no_basic_edu_pct = SBASC, 
-    no_drainage_pct = OVSDE, 
-    no_electricity_pct = OVSEE, 
-    no_piped_water_pct = OVSAE, 
-    dirt_floors_pct = OVPT, 
-    overcrowding_pct = VHAC, 
-    small_towns_pct = PL.5000, 
-    low_income_pct = PO2SM, 
-    IM = IM_2020,
-    IMN = IMN_2020,
-    GM = GM_2020
-  ) |> drop_na(IM)
+index <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
 
 index <- index[-1,]
 
-geo_info <- index |> dplyr::select(state, state_name, mun, mun_name)
-colSums(is.na(geo_info))
-capitals <- c("Aguascalientes", "Mexicali", "La Paz", "Campeche", "Tuxtla Gutiérrez", 
-              "Chihuahua", "Saltillo", "Colima", "Durango", "Guanajuato", 
-              "Chilpancingo de los Bravo", "Pachuca de Soto", "Guadalajara",
-              "Toluca", "Morelia", "Cuernavaca", "Tepic", "Monterrey", "Oaxaca de Juárez", 
-              "Puebla", "Querétaro", "Othón P. Blanco", "San Luis Potosí", 
-              "Culiacán", "Hermosillo", "Centro", "Victoria", 
-              "Tlaxcala", "Xalapa", "Mérida", "Zacatecas")
-
-geo_info <- geo_info |> mutate(
-  capital = if_else(mun_name %in% capitals, 1, 0)
-)
-
-geo_info$capital[geo_info$state_name == "Guanajuato" & geo_info$mun_name == "Victoria"] <- 0
+geo_info <- build_geo_info(index)
 
 geo_info <- geo_info %>%
   left_join(grouped_municipality_50000 |> sf::st_drop_geometry() |> select(mun, group_id), by = "mun") |>
@@ -119,39 +84,7 @@ saveRDS(geo_info_new_mun, file = "input-data-processed/geo_info_new_mun.RDS")
 #--------------------------------- POPULATION ----------------------------------
 
 ################################################################################
-X1_Grupo_Quinq_00_RM <- read_excel("input-data-raw/population/00_Republica_mexicana/1_Grupo_Quinq_00_RM.xlsx")
-
-population <- X1_Grupo_Quinq_00_RM |> rename(
-  mun = CLAVE,
-  state = CLAVE_ENT,
-  mun_name = NOM_MUN,
-  state_name = NOM_ENT,
-  sex = SEXO,
-  year = AÑO
-) |> pivot_longer(
-  cols = starts_with("POB_"), values_to = "population", names_to = "age"
-) |> mutate(
-  sex = case_when(
-    sex == "HOMBRES" ~ "male",
-    sex == "MUJERES" ~ "female"
-  )
-)
-
-population$mun <- str_pad(population$mun, 5, pad = "0")
-
-population <- population |> filter(year >= 1990 & year < 2024)
-
-population <- population |>
-  mutate(
-    age = str_replace(age, "POB_", "")
-  ) |>
-  mutate(
-    age = str_replace(age, "_", "-")
-  ) |> filter(age != "TOTAL" & age!= "85-mm" & age != "80-84")
-
-population$sex <- as.factor(population$sex)
-population$age <- as.factor(population$age)
-population$mun <- as.factor(population$mun)
+population <- load_population(keep_child = TRUE)
 
 population <- population |>
   left_join(geo_info |>
@@ -172,72 +105,12 @@ saveRDS(population_new_mun, file = "input-data-processed/population_new_mun.RDS"
 
 ################################################################################
 
-IMM_2020 <- read_excel("input-data-raw/marginalization/IMM_2020.xls", skip = 5)
-IMM_2015 <- read_excel("input-data-raw/marginalization/IMM_DP2_2015.xlsx", sheet = "IMM_2015")
-IMM_2010 <- read_excel("input-data-raw/marginalization/IMM_DP2_2010.xlsx", sheet = "IMM_2010")
 
-index_2020 <- IMM_2020 |>
-  rename(
-    mun = CVE_MUN,
-    state = CVE_ENT,
-    mun_name = NOM_MUN,
-    state_name = NOM_ENT,
-    population = POB_TOT,
-    illiterate_pct = ANALF, 
-    no_basic_edu_pct = SBASC, 
-    no_drainage_pct = OVSDE, 
-    no_electricity_pct = OVSEE, 
-    no_piped_water_pct = OVSAE, 
-    dirt_floors_pct = OVPT, 
-    overcrowding_pct = VHAC, 
-    small_towns_pct = PL.5000, 
-    low_income_pct = PO2SM, 
-    IM = IM_2020,
-    IMN = IMN_2020,
-    GM = GM_2020
-  ) |> drop_na(IM)
+index_2020 <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
 
-index_2015 <- IMM_2015 |>
-  rename(
-    mun = CVE_MUN,
-    state = CVE_ENT,
-    mun_name = NOM_MUN,
-    state_name = NOM_ENT,
-    population = POB_TOT,
-    illiterate_pct = ANALF, 
-    no_basic_edu_pct = SBASC, 
-    no_drainage_pct = OVSDE, 
-    no_electricity_pct = OVSEE, 
-    no_piped_water_pct = OVSAE, 
-    dirt_floors_pct = OVPT, 
-    overcrowding_pct = VHAC, 
-    small_towns_pct = PL.5000, 
-    low_income_pct = PO2SM, 
-    IM = IM_2015,
-    IMN = IMN_2015,
-    GM = GM_2015
-  ) |> drop_na(IM)
+index_2015 <- load_imm("input-data-raw/marginalization/IMM_DP2_2015.xlsx", 2015, sheet = "IMM_2015")
 
-index_2010 <- IMM_2010 |>
-  rename(
-    mun = CVE_MUN,
-    state = CVE_ENT,
-    mun_name = NOM_MUN,
-    state_name = NOM_ENT,
-    population = POB_TOT,
-    illiterate_pct = ANALF, 
-    no_basic_edu_pct = SBASC, 
-    no_drainage_pct = OVSDE, 
-    no_electricity_pct = OVSEE, 
-    no_piped_water_pct = OVSAE, 
-    dirt_floors_pct = OVPT, 
-    overcrowding_pct = VHAC, 
-    small_towns_pct = PL.5000, 
-    low_income_pct = PO2SM, 
-    IM = IM_2010,
-    IMN = IMN_2010,
-    GM = GM_2010
-  ) |> drop_na(IM)
+index_2010 <- load_imm("input-data-raw/marginalization/IMM_DP2_2010.xlsx", 2010, sheet = "IMM_2010")
 
 index_2020 <- index_2020[-1,]
 
@@ -257,7 +130,7 @@ combined_index <- bind_rows(
 )
 
 saveRDS(combined_index, "input-data-processed/mpi_mun.RDS")
-grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
+
 grouped_municipality_50000 <- grouped_municipality_50000 |>
   st_drop_geometry() |>
   select(mun, group_id)
@@ -362,5 +235,26 @@ index_marg <- combined_index |>
 saveRDS(index_marg, file = "input-data-processed/index_marg.RDS")
 file.copy("input-data-processed/mpi_new_mun.RDS",
           "input-data-processed/mpi_imputed.RDS", overwrite = TRUE)
+
+################################################################################
+# BIRTHS (municipality + new-municipality)
+################################################################################
+births <- load_year_panels("fertility datasets") |>
+  group_by(year, sex, age, mun, year_reg) |>
+  summarise(births = sum(births), .groups = "drop") |>
+  filter(year >= 1985, year <= 2024)
+saveRDS(births, file = "input-data-processed/births.RDS")
+
+grouped_mun_lookup <- readRDS("input-data-processed/grouped_municipality_50000.RDS") |>
+  sf::st_drop_geometry() |> dplyr::select(mun, group_id)
+births_new_mun <- births |>
+  dplyr::left_join(grouped_mun_lookup, by = "mun") |>
+  group_by(group_id, year, sex, age, year_reg) |>
+  summarise(births = sum(births), .groups = "drop")
+saveRDS(births_new_mun, file = "input-data-processed/births_new_mun.RDS")
+
 # index_marg / im.tmp (mun-level detail) feed Chapter 5; need fuller mun-level MPI.
 message("ch1_060: skipping index_marg / im.tmp (need fuller mun-level MPI).")
+
+
+
