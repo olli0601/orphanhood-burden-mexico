@@ -1,7 +1,46 @@
 {
   "permissions": {
     "allow": [
-      "Bash(Rscript -e ' *)"
+      "Bash(Rscript -e ' *)",
+      "Bash(grep -vE \"^Loading|Attaching|masked|conflicts|^The following|^$|^ℹ Use\")",
+      "Bash(grep -vE \"^Loading|masked|^$\")",
+      "Bash(awk '{print \"mort.RDS:\",$5}')",
+      "Bash(sed -i '' '224s/ggplot\\(deaths_prop,/ggplot\\(deaths_prop_reg,/' scripts-R/ch1_040_clean_mort.R)",
+      "Bash(sed -n '224p' scripts-R/ch1_040_clean_mort.R)",
+      "Bash(awk '{print $NF,$5}')",
+      "Bash(grep -nE 'full_join\\\\\\(deaths|mort$mort_rate|mort$deaths|select\\\\\\(mun, group_id|tot_deaths\\\\\\)' scripts-R/ch1_040_clean_mort.R)",
+      "Bash(awk '{print \"fert.RDS:\",$5}')",
+      "Bash(sed -i '' '337s/ %>% dplyr::select\\(-year\\)//' scripts-R/ch1_050_clean_fert.R)",
+      "Bash(sed -n '337p' scripts-R/ch1_050_clean_fert.R)",
+      "Bash(echo \"RC=$?\")",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs '-I{}' sh -c 'ls -lh \"{}\" | awk \"{print \\\\$5, \\\\$NF}\"')",
+      "Bash(grep -nA3 \"suppressMessages\\({\" scripts-R/ch4_020_fertility_stan.R scripts-R/ch4_030_mortality_stan.R)",
+      "Bash(curl -s -m 30 -A \"Mozilla/5.0\" \"https://www.inegi.org.mx/programas/natalidad/\" -o nat_page.html)",
+      "Bash(grep -oiE '\\(hProy|hProg|data-[a-z]+=\"[0-9]+\"|natalidad[^\"]{0,20}\\)' nat_page.html)",
+      "Bash(curl -s -r 0-2047 \"https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos/2019/conjunto_de_datos_natalidad_2019_csv.zip\" -o /tmp/n19.part)",
+      "Bash(xxd -l 4 /tmp/n19.part)",
+      "Bash(unzip -l \"input-data-raw/births/EDR 2024 Data Set.zip\")",
+      "Bash(unzip -l \"input-data-raw/deaths/General Deaths Database 1990-1994.zip\")",
+      "Bash(unzip -l \"input-data-raw/deaths/conjunto_de_datos_defunciones_registradas_2020_csv.zip\")",
+      "Bash(unzip -p \"input-data-raw/deaths/General Deaths Database 1990-1994.zip\" \"defunciones_base_datos_1990_dbf/DEFUN90.dbf\")",
+      "Bash(python3 -c ' *)",
+      "Bash(sed -i '' -e 's/ntile\\(-IMN, 5\\)/ntile\\(-as.numeric\\(IMN\\), 5\\)/g' -e 's/aes\\(x = IMN, y = delay\\)/aes\\(x = as.numeric\\(IMN\\), y = delay\\)/g' scripts-R/ch3_050_delay_analysis.R)",
+      "Bash(echo \"rc=$?\")",
+      "Bash(sed -i '' '140s/group_by\\(group_id, year, sex, age\\)/group_by\\(group_id, year, sex, age, year_reg\\)/' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -n '139,141p' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -i '' '170s/dplyr::select\\(group_id, year, sex, age, tot_births\\)/dplyr::select\\(group_id, year, sex, age, year_reg, tot_births\\)/' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -n '170p' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(echo \"ch3_020 rc=$?\")",
+      "Bash(sed -i '' '203s/df_2023_fert$tot_population/df_2023_fert$population/' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -n '203p' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(grep -iE \"Error|cannot open|not found|object|recycle|\\\\\\\\\\\\$<-\" /tmp/g_ch3_020.log)",
+      "Bash(sed -n '41,52p' scripts-R/ch3_050_delay_analysis.R)",
+      "Bash(sed -n '140,170p' scripts-R/ch3_050_delay_analysis.R)",
+      "Bash(sed -i '' 's|load\\(\"input-data-processed/fert.RDS\"\\)|fert <- readRDS\\(\"input-data-processed/fert.RDS\"\\)|' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -i '' 's|fert <- fert <- readRDS|fert <- readRDS|' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -i '' 's|df_fert <- left_join\\(fert, index_marg, by=c\\(\"group_id\", \"year\"\\)\\)|df_fert <- left_join\\(fert, index_marg |> mutate\\(year = as.character\\(year\\)\\), by=c\\(\"group_id\", \"year\"\\)\\)|' scripts-R/ch3_020_clean_fertility.R)",
+      "Bash(sed -i '' 's|df_fert_std <- left_join\\(df_fert_std, index_marg, by=c\\(\"group_id\", \"year\"\\)\\)|df_fert_std <- left_join\\(df_fert_std, index_marg |> mutate\\(year = as.character\\(year\\)\\), by=c\\(\"group_id\", \"year\"\\)\\)|' scripts-R/ch3_020_clean_fertility.R)"
     ]
   }
 }
