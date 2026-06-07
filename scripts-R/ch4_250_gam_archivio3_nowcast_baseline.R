@@ -3,6 +3,7 @@
 # Archived patched baseline (with line-based credible intervals); kept for reproducibility.
 # Reads input-data-processed/{births_new_mun,population_new_mun}.RDS -> models/predictions, output/ch4/.
 # =============================================================================
+source("R/rates.R")
 
 ################################################################################
 # NOWCASTING REGISTERED BIRTHS - BASELINE MODEL

@@ -118,14 +118,26 @@ fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
 #
 # Leave a vector empty to skip that source.
 
+# INEGI registered-births open data — stable direct URLs (verified 2026-06).
+# Only 2017-2024 are published at the open-data path; 1985-2016 are request-gated
+# (NADA microdata form) and must be added manually. Naming: 2017-2022 use
+# "natalidad", 2023-2024 use "enr". CSV through preprocess_fertility() reproduces
+# the fert_YYYY tables exactly (validated for 2020).
+.inegi_nat <- "https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos"
 inegi_births_urls <- c(
-  # 2023 = "https://www.inegi.org.mx/.../conjunto_de_datos_natalidad_2023_csv.zip",
-  # 2022 = "...",
+  "2017" = file.path(.inegi_nat, "2017/conjunto_de_datos_natalidad_2017_csv.zip"),
+  "2018" = file.path(.inegi_nat, "2018/conjunto_de_datos_natalidad_2018_csv.zip"),
+  "2019" = file.path(.inegi_nat, "2019/conjunto_de_datos_natalidad_2019_csv.zip"),
+  "2020" = file.path(.inegi_nat, "2020/conjunto_de_datos_natalidad_2020_csv.zip"),
+  "2021" = file.path(.inegi_nat, "2021/conjunto_de_datos_natalidad_2021_csv.zip"),
+  "2022" = file.path(.inegi_nat, "2022/conjunto_de_datos_natalidad_2022_csv.zip"),
+  "2023" = file.path(.inegi_nat, "2023/conjunto_de_datos_enr2023_csv.zip"),
+  "2024" = file.path(.inegi_nat, "2024/conjunto_de_datos_enr2024_csv.zip")
 )
 
+# INEGI registered-deaths open data — the mortalidad open-data file-naming was
+# not confirmed by direct probe; add per-year URLs from the portal as needed.
 inegi_deaths_urls <- c(
-  # 2023 = "https://www.inegi.org.mx/.../conjunto_de_datos_defunciones_2023_csv.zip",
-  # 2022 = "...",
 )
 
 # Dropbox mirrors shared by Jose Manuel Aburto (pre-processed by registration
@@ -163,15 +175,15 @@ if (length(inegi_deaths_urls) == 0) {
 # ===========================================================================
 # 3. CONAPO - Indice de Marginacion Municipal (IMM)
 # ===========================================================================
-# Direct datos-abiertos workbooks. Only the 2020 release is served under the
-# stable CONAPO open-data path; 2010 & 2015 ship inside the 2020 historical
-# bundle on the gob.mx documents page (see README), so fetch those manually if
-# needed:  https://www.gob.mx/conapo/documentos/indices-de-marginacion-2020-284372
+# Direct datos-abiertos municipal workbooks (verified 2026-06). 2010 & 2015 use
+# the DP2 (penalised-distance) method and the .xlsx extension; 2020 is .xls.
+# All under the same CONAPO open-data path; listed on the gob.mx 2020 release:
+# https://www.gob.mx/conapo/documentos/indices-de-marginacion-2020-284372
 message("== CONAPO marginalization (IMM) ==")
-fetch(
-  "https://conapo.segob.gob.mx/work/models/CONAPO/Datos_Abiertos/Municipio/IMM_2020.xls",
-  file.path(dirs["marginalization"], "IMM_2020.xls")
-)
+.imm <- "https://conapo.segob.gob.mx/work/models/CONAPO/Datos_Abiertos/Municipio"
+fetch(file.path(.imm, "IMM_2020.xls"),      file.path(dirs["marginalization"], "IMM_2020.xls"),      min_bytes = 5000)
+fetch(file.path(.imm, "IMM_DP2_2015.xlsx"), file.path(dirs["marginalization"], "IMM_DP2_2015.xlsx"), min_bytes = 5000)
+fetch(file.path(.imm, "IMM_DP2_2010.xlsx"), file.path(dirs["marginalization"], "IMM_DP2_2010.xlsx"), min_bytes = 5000)
 
 # ===========================================================================
 # 4. CONAPO - municipal population (BD municipales, "pry23" reconstruction)

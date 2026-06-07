@@ -18,7 +18,7 @@ library(ggplot2)
 library(gridExtra)
 library(foreign)
 library(Polychrome)
-source("../R/utils.R")
+source("R/preprocess_fertility.R"); source("R/preprocess_mortality.R")
 
 df <- foreign::read.dbf("input-data-raw/births/fertility_1990_2016/fertility_mexico_2014.dbf", as.is = FALSE)
 df <- readr::read_delim("input-data-raw/births/fertility/fertility_mexico_2017.csv", delim = ";", escape_double = FALSE, trim_ws = TRUE)

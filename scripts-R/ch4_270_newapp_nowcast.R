@@ -3,6 +3,7 @@
 # Alternative nowcast: Poisson plug-in Stan model with reduce_sum threading, producing national delay-adjusted birth totals.
 # Reads input-data-processed/{population_new_mun,births_new_mun}.RDS, generates+compiles a Stan model -> output/ch4/*.png + fit RDS.
 # =============================================================================
+source("R/rates.R")
 
 # nowcast_bayes_yearly_nowcast_only_reduce_sum.R
 # Full Bayesian NOWCAST (yearly), plug-in c_t (YEARS), no forecasts.

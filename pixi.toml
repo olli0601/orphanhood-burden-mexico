@@ -43,6 +43,7 @@ cmdstan = "==2.37.0"
 "r-matrixstats" = "*"
 "r-future.apply" = "*"
 "r-yardstick" = "*"
+"r-quantreg" = "*"
 "r-hmisc" = "*"
 "r-stringi" = "*"
 

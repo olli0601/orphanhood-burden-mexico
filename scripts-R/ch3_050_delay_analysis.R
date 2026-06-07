@@ -127,7 +127,7 @@ marg_index <- readRDS(file = "input-data-processed/marg_index.RDS")
 
 marg_index <- marg_index |>
   mutate(
-    marginalization_quintile = ntile(-IMN, 5),  
+    marginalization_quintile = ntile(-as.numeric(IMN), 5),  
     mpi_label = case_when(
       marginalization_quintile == 1 ~ "Very High",
       marginalization_quintile == 2 ~ "High",
@@ -158,7 +158,7 @@ ggplot(delay_df_mort, aes(x = delay, weight = deaths)) +
   theme_minimal()
 
 # INTERACTION WITH MPI
-ggplot(delay_df_mort, aes(x = IMN, y = delay)) +
+ggplot(delay_df_mort, aes(x = as.numeric(IMN), y = delay)) +
   geom_point(alpha = 0.4) +
   geom_smooth(method = "lm", color = "red", se = FALSE) +
   labs(title = "Delay vs Marginalization Index", x = "MPI", y = "Delay (days)") +
@@ -274,7 +274,7 @@ marg_index <- readRDS(file = "input-data-processed/marg_index.RDS")
 
 marg_index <- marg_index |>
   mutate(
-    marginalization_quintile = ntile(-IMN, 5),  
+    marginalization_quintile = ntile(-as.numeric(IMN), 5),  
     mpi_label = case_when(
       marginalization_quintile == 1 ~ "Very High",
       marginalization_quintile == 2 ~ "High",

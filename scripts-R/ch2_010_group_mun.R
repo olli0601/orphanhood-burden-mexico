@@ -18,7 +18,7 @@ library(stringr)
 library(stringi)
 library(ggplot2)
 library(viridis)
-source("../R/utils.R")
+source("R/municipality_grouping.R")
 
 # Replace with your actual GeoJSON file path
 mex_muni <- st_read("input-data-raw/geometries/gadm41_MEX_2.json")
@@ -131,7 +131,7 @@ grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality
 
 sum(aggregated_muni_30000$total_pop < 30000)
 
-ggplot(data = aggregated_muni) +
+ggplot(data = aggregated_muni_30000) +
   geom_sf(aes(fill = log(total_pop))) +
   scale_fill_viridis_c(option = "viridis", name = "Log Population") +
   theme_minimal() +
@@ -177,6 +177,9 @@ ggplot() +
 
 
 #------------ RELATIONSHIP WITH MPI ---------------
+if (!file.exists("input-data-processed/mpi_mun.RDS")) {
+  message("ch2: skipping marginalization-variance plots — mpi_mun.RDS not built yet (produced by ch1_060_prepare_datasets).")
+} else {
 mpi_new_mun <- readRDS("input-data-processed/mpi_new_mun.RDS")
 mpi_mun <- readRDS("input-data-processed/mpi_mun.RDS")
 
@@ -247,3 +250,4 @@ ggplot(within_group_variance, aes(x = year, y = var_mpi, group = group_id)) +
 ################################################################################
 #--------------------------- SENSITIVITY ANALYSIS ------------------------------
 ################################################################################
+}

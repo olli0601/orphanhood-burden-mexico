@@ -3,6 +3,7 @@
 # GAM-Dirichlet baseline: per-municipality delay-adjusted birth nowcast; fits the baseline models and stores per-cell predictions.
 # Reads input-data-processed/{births_new_mun,population_new_mun}.RDS -> writes input-data-processed/{municipality_models_all,nowcast_cell_predictions,municipality_models_summary}.RDS, output/ch4/.
 # =============================================================================
+source("R/rates.R")
 
 ################################################################################
 # NOWCASTING REGISTERED BIRTHS - BASELINE MODEL

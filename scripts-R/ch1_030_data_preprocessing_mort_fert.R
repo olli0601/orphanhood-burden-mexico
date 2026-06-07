@@ -8,6 +8,7 @@
 # Writes: output/ch1/std_mortality_comparison_*.jpeg
 # Run after: ch1_020
 # =============================================================================
+source("R/plots.R")
 
 library(readr)
 library(tidyr)

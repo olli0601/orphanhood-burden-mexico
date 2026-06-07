@@ -20,7 +20,7 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 library(sf)
-source("../R/utils.R")
+source("R/rates.R"); source("R/plots.R")
 ################################################################################
 
 #---------------------------- SHOW DELAY REPORTING ----------------------------
@@ -137,7 +137,7 @@ births <- left_join(births,
 
 # --------- GROUP BY THE NEW MUNICIPALITIES ---------------
 births_new_mun <- births |>
-  group_by(group_id, year, sex, age)  |>
+  group_by(group_id, year, sex, age, year_reg)  |>
   summarise(tot_births = sum(births), .groups = "drop") 
 
 births_new_mun <- births_new_mun |>
@@ -167,7 +167,7 @@ population_new_mun <- population |>
   summarise(tot_population = sum(population),  .groups = "drop")
 
 population_new_mun <- readRDS("input-data-processed/population_new_mun.RDS")
-fert <- left_join(births_new_mun %>% dplyr::select(group_id, year, sex, age, tot_births), 
+fert <- left_join(births_new_mun %>% dplyr::select(group_id, year, sex, age, year_reg, tot_births), 
                   population_new_mun, 
                   by = c("group_id", "year", "sex", "age"))
 
@@ -200,7 +200,7 @@ saveRDS(fert, file = "input-data-processed/fert.RDS")
 index_marg <- readRDS("input-data-processed/index_marg.RDS")
 
 df_2023_fert <- fert |> filter(year==2023) |> full_join(index_marg, by = c("group_id")) 
-df_2023_fert$fert_rate <- df_2023_fert$tot_births / df_2023_fert$tot_population
+df_2023_fert$fert_rate <- df_2023_fert$tot_births / df_2023_fert$population
 df_2023_fert <- df_2023_fert |> drop_na()
 
 ################################################################################
@@ -223,7 +223,7 @@ print(p_raw_pts)
 #------------------------- National mortality rate -----------------------------
 
 ################################################################################
-fert <- load("input-data-processed/fert.RDS")
+fert <- readRDS("input-data-processed/fert.RDS")
 fert$year <- as.character(fert$year)
 fert <- fert |>
   tidyr::unnest(cols = c(tot_births, population))
@@ -286,6 +286,7 @@ ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = 
 
 #-------------------------------------------------------------------------------
 # Ensure year is numeric
+index_marg <- readRDS("input-data-processed/marg_index.RDS")  # group_id x year IMN/GM
 index_marg <- index_marg |>
   mutate(year = as.integer(year))
 
@@ -304,7 +305,7 @@ imn_2020 <- index_marg |>
 # Combine everything
 index_marg <- bind_rows(imn_2010, index_marg, imn_2020) |>
   arrange(group_id, year)
-df_fert <- left_join(fert, index_marg, by=c("group_id", "year"))
+df_fert <- left_join(fert, dplyr::mutate(index_marg, year = as.character(year)), by=c("group_id", "year"))
 
 df_fert <- df_fert |>
   filter(!age %in% as.character(0:15)) |>
@@ -312,7 +313,7 @@ df_fert <- df_fert |>
 
 df_fert <- df_fert |>
   mutate(
-    poverty_quintile = ntile(marg_index_weighted, 5)  # 5 = number of quantile groups
+    poverty_quintile = ntile(IMN, 5)  # 5 = number of quantile groups
   )
 
 df_fert <- df_fert |>
@@ -345,10 +346,10 @@ ggplot(df_summary, aes(x = year, y = fertility_rate, color = as.factor(poverty_q
   )
 
 df_fert_std <- compute_std_fert_rate(df_fert)
-df_fert_std <- left_join(df_fert_std, index_marg, by=c("group_id", "year"))
+df_fert_std <- left_join(df_fert_std, dplyr::mutate(index_marg, year = as.character(year)), by=c("group_id", "year"))
 df_fert_std <- df_fert_std |>
   mutate(
-    poverty_quintile = ntile(marg_index_weighted, 5)  # 5 = number of quantile groups
+    poverty_quintile = ntile(IMN, 5)  # 5 = number of quantile groups
   )
 
 df_fert_std <- df_fert_std|>
@@ -370,3 +371,5 @@ ggplot(df_fert_std, aes(x = year, y = std_fert_rate, color = as.factor(poverty_q
     y = "Average Standardized Fertility Rate",
     color = "Poverty Quintile"
   )
+
+

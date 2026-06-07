@@ -21,39 +21,20 @@ library(tidyr)
 library(ggplot2)
 library(gridExtra)
 library(foreign)
-source("../R/utils.R")
+source("R/preprocess_fertility.R"); source("R/preprocess_mortality.R"); source("R/rates.R"); source("R/plots.R")
 
-prova <- read.dbf("input-data-raw/births/fertility_1990_2016/fertility_mexico_2010.dbf")
-
-# Get a list of CSV files in the "fertility" folder
-csv_files_fert <- list.files("input-data-raw/births/fertility", 
-                        pattern = "fertility_mexico_[0-9]{4}\\.csv", 
-                        full.names = TRUE)
-
-# Get a list of DBF files in the "fertility_1990_2011" folder
-dbf_files_fert <- list.files("input-data-raw/births/fertility_1990_2016", 
-                        pattern = "fertility_mexico_[0-9]{4}\\.dbf", 
-                        full.names = TRUE)
-
-
-file_list_fert <- c(dbf_files_fert, csv_files_fert)
-
-# Loop through each file, extract the year, preprocess, and assign it to an object
-for(file in file_list_fert) {
-  # Extract the year from the filename
-  print(file)
-  year_reg <- str_extract(basename(file), "[0-9]{4}")
-  
-  # Process the file using the preprocess_mortality function
-  df_processed <- preprocess_fertility(file)
-  
-  # Add the year to the processed dataframe
-  df_processed$year_reg <- year_reg
-  
-  # Dynamically create a variable name for each year's dataset
+# Load the SUPPLIED per-year fertility datasets into fert_YYYY objects (the
+# output of preprocess_fertility() on the raw INEGI files). Lets the pipeline
+# start from input-data-processed/ without the raw files. (To regenerate from
+# raw instead, loop the INEGI files through preprocess_fertility().)
+# Run ch1_005_bootstrap_from_processed.R first.
+fertility_rds_files <- list.files("input-data-processed/fertility datasets",
+                                  pattern = "[.]RDS$", full.names = TRUE)
+for (file in fertility_rds_files) {
+  year_reg     <- str_extract(basename(file), "[0-9]{4}")
+  df_processed <- readRDS(file)
+  if (!"year_reg" %in% names(df_processed)) df_processed$year_reg <- year_reg
   assign(paste0("fert_", year_reg), df_processed)
-  saveRDS(df_processed, file = paste0("input-data-processed/fert_", year_reg, ".RDS"))
-  print("saved")
 }
 
 ## BARPLOT 
@@ -94,45 +75,24 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   theme_void() + 
   labs(title = "Birth Year Distribution per Registration Year") +
   theme(legend.title = element_text(size = 10), legend.text = element_text(size = 8)) +
-  scale_fill_manual(values = rainbow(32))
+  scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
 print(p_pie)
 
-# Change the years
-# List of the dataset names (as strings)
-fert_list <- c("fert_1997", "fert_1996", "fert_1995", "fert_1994", "fert_1993", "fert_1992", "fert_1991", "fert_1990")
-
-# Loop through each dataset name in the list
-for(element_name in fert_list){
-  # Retrieve the dataset by its name
-  element <- get(element_name)
-  
-  # Modify the year column
-  element <- element |>
-    mutate(
-      year = as.numeric(paste0("19", str_pad(as.character(year), width = 2, side = "left", pad = "0")))
-    )
-  
-  # Assign the modified dataset back to the same name
+# Correct the 2-digit occurrence year in the early files (1985-1997 store
+# `year` as 2 digits, e.g. 90 -> 1990). Named to avoid the ^fert_ mget sweep.
+early_fert_names <- intersect(paste0("fert_", 1985:1997), ls(pattern = "^fert_[0-9]{4}$"))
+for (element_name in early_fert_names) {
+  element <- get(element_name) |>
+    mutate(year = as.numeric(paste0("19", str_pad(as.character(year), width = 2, side = "left", pad = "0"))))
   assign(element_name, element)
 }
 
-
-# Combine and aggregate all years
-births <- rbind(
-  fert_2023, fert_2022, fert_2021, fert_2020,
-  fert_2019, fert_2018, fert_2017, fert_2016, 
-  fert_2015, fert_2014, fert_2013, fert_2012, 
-  fert_2011, fert_2010, fert_2009, fert_2008,
-  fert_2007, fert_2006, fert_2005, fert_2004, 
-  fert_2003, fert_2002, fert_2001, fert_2000, 
-  fert_1999, fert_1998, fert_1997, fert_1996, 
-  fert_1995, fert_1994, fert_1993, fert_1992, 
-  fert_1991, fert_1990
-) |>
+# Combine and aggregate all available years (1985-2024).
+births <- bind_rows(mget(ls(pattern = "^fert_[0-9]{4}$"))) |>
   group_by(year, sex, age, mun) |>
   summarise(births = sum(births), .groups = "drop") |>
-  filter(year >= 1990, year < 2024)
+  filter(year >= 1985, year <= 2024)
 
 
 ##########################################
@@ -353,7 +313,7 @@ fert_national <- fert_national |> drop_na()
 
 # Second: calculate the standardized deaths rate
 std_age_sex <- compute_national_std_rate_age_gender(fert_national)
-std_age_sex <- std_age_sex %>% filter(year == 2023) %>% dplyr::select(-year)
+std_age_sex <- std_age_sex %>% filter(year == 2023)
 
 ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
   geom_line() +
@@ -416,6 +376,9 @@ for (yr in years) {
 
 library(readr)
 
+if (!file.exists("input-data-raw/marginalization/Indicadores_municipales_sabana_DA.csv")) {
+  message("ch1_050: skipping poverty-index (MPI) section — Indicadores_municipales_sabana_DA.csv not in input-data-raw/ (optional CONAPO file).")
+} else {
 Indicadores_municipales_sabana_DA <- read_csv("input-data-raw/marginalization/Indicadores_municipales_sabana_DA.csv")
 mpi <- Indicadores_municipales_sabana_DA %>% select(ent, nom_ent, mun, nom_mun, pobreza) %>% rename(mpi=pobreza)
 mpi <- mpi %>% mutate(mun= paste0(ent, mun))
@@ -435,3 +398,4 @@ for (yr in years) {
 
 library(readr)
 grupos_poblacionales_2020 <- read_csv("input-data-raw/grupos_poblacionales_2020.csv")
+}

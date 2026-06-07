@@ -20,7 +20,6 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 library(sf)
-source("../R/utils.R")
 
 ################################################################################
 
@@ -141,22 +140,6 @@ delay_df_GM <- delay_df_GM %>%
     .groups = "drop"
   )
 
-delay_df_GM <- delay_df_GM %>%
-  mutate(
-    GM = case_when(
-      IMN >= thresholds$min_value[thresholds$GM == "Muy alto"] &
-        IMN <= thresholds$max_value[thresholds$GM == "Muy alto"] ~ "Very High",
-      IMN >= thresholds$min_value[thresholds$GM == "Alto"] &
-        IMN <= thresholds$max_value[thresholds$GM == "Alto"] ~ "High",
-      IMN >= thresholds$min_value[thresholds$GM == "Medio"] &
-        IMN <= thresholds$max_value[thresholds$GM == "Medio"] ~ "Medium",
-      IMN >= thresholds$min_value[thresholds$GM == "Bajo"] &
-        IMN <= thresholds$max_value[thresholds$GM == "Bajo"] ~ "Low",
-      IMN >= thresholds$min_value[thresholds$GM == "Muy bajo"] &
-        IMN <= thresholds$max_value[thresholds$GM == "Muy bajo"] ~ "Very Low",
-      TRUE ~ NA_character_
-    )
-  )
 
 
 # Ensure GM is an ordered factor
@@ -404,5 +387,6 @@ tm_shape(delay_map) +
   ) +
   tm_facets(by = "year", drop.units = TRUE, free.coords = FALSE) +
   tm_basemap("CartoDB.Positron")
+
 
 

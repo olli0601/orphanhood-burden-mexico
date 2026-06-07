@@ -6,8 +6,10 @@
 
 # JOINT MODEL FOR NATIONAL COUNT AND MUNICIPALITY BIRTHS
 
-source("../R/header.R")
-source("../R/aux.R")
+suppressMessages({
+  library(tidyverse); library(reshape2); library(cmdstanr); library(bayesplot)
+})
+source("R/aux.R")
 
 data <- readRDS(file = "input-data-processed/fertility_bias_data.RDS")
 

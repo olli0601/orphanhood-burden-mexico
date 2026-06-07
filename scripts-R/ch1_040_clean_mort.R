@@ -26,35 +26,21 @@ library(ggplot2)
 library(gridExtra)
 library(foreign)
 library(Polychrome)
-source("../R/utils.R")
+source("R/preprocess_mortality.R"); source("R/rates.R"); source("R/plots.R")
 
-# Get a list of CSV files in the "mortality" folder
-csv_files <- list.files("input-data-raw/deaths/mortality", 
-                        pattern = "mortality_mexico_[0-9]{4}\\.csv", 
-                        full.names = TRUE)
-
-# Get a list of DBF files in the "mortality_1990_2011" folder
-dbf_files <- list.files("input-data-raw/deaths/mortality_1990_2011", 
-                        pattern = "mortality_mexico_[0-9]{4}\\.dbf", 
-                        full.names = TRUE)
-
-
-file_list <- c(dbf_files, csv_files)
-
-# Loop through each file, extract the year, preprocess, and assign it to an object
-for(file in file_list) {
-  # Extract the year from the filename
-  year_reg <- str_extract(basename(file), "[0-9]{4}")
-  
-  # Process the file using the preprocess_mortality function
-  df_processed <- preprocess_mortality(file)
-  
-  # Add the year to the processed dataframe
-  df_processed$year_reg <- year_reg
-  
-  # Dynamically create a variable name for each year's dataset
+# Load the SUPPLIED per-year mortality datasets into mort_YYYY objects. These
+# are the output of preprocess_mortality() on the raw INEGI files; loading them
+# here lets the pipeline start from input-data-processed/ without the raw files.
+# (To regenerate from raw instead, loop the INEGI files through
+# preprocess_mortality() as in ch1_005 / the git history.)
+# Run ch1_005_bootstrap_from_processed.R first.
+mortality_rds_files <- list.files("input-data-processed/mortality datasets",
+                         pattern = "[.]RDS$", full.names = TRUE)
+for (file in mortality_rds_files) {
+  year_reg     <- str_extract(basename(file), "[0-9]{4}")
+  df_processed <- readRDS(file)
+  if (!"year_reg" %in% names(df_processed)) df_processed$year_reg <- year_reg
   assign(paste0("mort_", year_reg), df_processed)
-  #saveRDS(df_processed, file = paste0("input-data-processed/mort_", year_reg, ".RDS"))
 }
 
 
@@ -76,7 +62,7 @@ data_summary <- all_mort %>%
 
 library(RColorBrewer)
 length(unique(data_summary$year))
-color_palette <- colorRampPalette(brewer.pal(9, "Set1"))(32)  # Generate 101 colors
+color_palette <- colorRampPalette(brewer.pal(9, "Set1"))(length(unique(data_summary$year)))  # Generate 101 colors
 
 # Plot the data with the custom color palette
 p <- ggplot(data_summary, aes(x = factor(year_reg), y = count, fill = factor(year))) +
@@ -121,7 +107,7 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   theme_void() + 
   labs(title = "Death Year Distribution per Registration Year") +
   theme(legend.title = element_text(size = 10), legend.text = element_text(size = 8)) +
-  scale_fill_manual(values = rainbow(32))
+  scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
 print(p_pie)
 
@@ -150,7 +136,7 @@ deaths <- rbind(mort_2023, mort_2022, mort_2021, mort_2020, mort_2019,
   summarise(deaths = sum(deaths), .groups = "drop")
 
 deaths <- deaths |> filter(year >= 1990 & year < 2024)
-grouped_municipality <- readRDS("input-data-processed/grouped_municipality.RDS")
+grouped_municipality <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
 deaths <- left_join(deaths, grouped_municipality |> select(state_name, mun_name, mun, group_id), by ="mun")
 
 # --------- GROUP BY THE NEW MUNICIPALITIES ---------------
@@ -235,7 +221,7 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor
   theme_minimal()
 #------
 
-ggplot(deaths_prop, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
+ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = my_colors) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
@@ -288,9 +274,10 @@ population$age <- as.factor(population$age)
 population$mun <- as.factor(population$mun)
 
 saveRDS(population, "input-data-processed/population.RDS")
-mort <- full_join(deaths |> select(mun, group_id, year, sex, age, year_reg, tot_deaths), population, by = c("mun", "year", "sex", "age"))
+mort <- full_join(deaths |> select(mun, group_id, year, sex, age, year_reg, deaths, tot_deaths), population, by = c("mun", "year", "sex", "age"))
 
 mort$tot_deaths[is.na(mort$tot_deaths)] <- 0
+mort$deaths[is.na(mort$deaths)] <- 0
 
 #marginality index
 IMM_2020 <- read_excel("input-data-raw/marginalization/IMM_2020.xls", skip = 5)

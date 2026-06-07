@@ -15,3 +15,7 @@ __pycache__/
 # Pixi environment
 .pixi/
 pixi.lock
+
+# Large regenerated intermediates (reproducible via ch1_040 / ch1_050)
+input-data-processed/fert.RDS
+input-data-processed/mort.RDS

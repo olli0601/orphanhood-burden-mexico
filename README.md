@@ -28,11 +28,40 @@ aggregated into 519 analytical units (each ≥50,000 inhabitants; see thesis Cha
   demographic analysis and Bayesian nowcast model; *monthly* (month × sex × age group ×
   municipality) for the NowcastPNN model.
 
+#### Automatic retrieval (INEGI open data)
+
+INEGI advertises registered-births microdata back to 1985 on the
+[natalidad microdata page](https://www.inegi.org.mx/programas/natalidad/#microdatos), but
+only the recent open-data years expose **stable, scriptable direct URLs**:
+
+| Years | Direct URL (under `https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos/<YEAR>/`) | Auto-retrievable |
+|---|---|---|
+| 2017–2022 | `conjunto_de_datos_natalidad_<YEAR>_csv.zip` | ✅ |
+| 2023–2024 | `conjunto_de_datos_enr<YEAR>_csv.zip` | ✅ |
+| 1985–2016 | not published at the open-data path | ❌ (request-gated microdata) |
+
+So **2017–2024 can be pulled automatically**; **1985–2016 cannot** via a clean URL — they
+sit behind the JS download widget / NADA microdata request form (the pre-2017 years used
+here came courtesy of José Manuel Aburto). The portal landing page itself is
+JavaScript-rendered, so links must be hit by the direct content URLs above, not scraped.
+
+**Derivation is exact.** Running the raw open-data CSV through `preprocess_fertility()`
+reproduces the supplied per-year fertility table to the dimensions we need
+(`year × sex × age-group × municipality × births`) **bit-for-bit** — verified for 2020:
+124,374 rows, 0 mismatched cells, 2,971,580 total births identical to the supplied
+`fert_2020.RDS`. These URLs are wired into `scripts-R/ch1_010_get_input_data_raw.R`.
+
 ### Mortality — Registered deaths
 
-- **Source:** INEGI, *Estadísticas de Defunciones Registradas* (Registered Deaths Statistics).
+- **Source:** INEGI, *Estadísticas de Defunciones Registradas* (Registered Deaths Statistics) —
+  microdata page: <https://en.www.inegi.org.mx/programas/edr/#microdata> ("EDR" =
+  *Estadísticas de Defunciones Registradas*).
 - **Portal:** same INEGI open-data path → *Registered Deaths Statistics*.
-- **Coverage and preprocessing:** identical pipeline to fertility (outcome = death counts
+- **File layout:** mixed — recent years are single-year zips
+  (`conjunto_de_datos/…defunciones_registrad{os,as}_<YEAR>.csv`); older years arrive as
+  **multi-year bundles** (e.g. `…1990_1994…`, `…2015_2019…`) each holding per-year
+  `DEFUN<YY>.dbf` files, which must be split by year before processing.
+- **Coverage and preprocessing:** same pipeline as fertility (outcome = death counts
   by municipality, sex, age group, time), giving structurally comparable fertility and
   mortality tables. Death registration delays are short (≈97–99% registered in the
   occurrence year), so mortality is used without nowcasting.

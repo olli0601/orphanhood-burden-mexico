@@ -6,8 +6,9 @@
 
 # JOINT MODEL FOR NATIONAL COUNT AND MUNICIPALITY DEATHS
 
-source("../R/header.R")
-source("../R/utils.R")
+suppressMessages({
+  library(tidyverse); library(reshape2); library(cmdstanr); library(posterior); library(bayesplot)
+})
 
 mort      <- readRDS(file = "input-data-processed/mort.RDS")
 geo_info  <- readRDS(file = "input-data-processed/geo_info_new_mun.RDS")

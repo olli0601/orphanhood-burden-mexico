@@ -23,7 +23,7 @@ library(forcats)    # For factor manipulation
 library(purrr)
 
 # --- 1b. Load custom functions for standardised rates ---
-source("../R/utils.R")  # Adjust path if needed
+source("R/rates.R")  # Adjust path if needed
 
 # --- 2. Load datasets ---
 # Adjust file paths if needed
