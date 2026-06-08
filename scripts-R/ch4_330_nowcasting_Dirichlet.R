@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_330_nowcasting_Dirichlet.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # NIMBLE Dirichlet delay-distribution nowcasting exploration.
-# Reads input-data-processed/mort.RDS.
+# Reads input-data-processed/mort_by_grouped_mun.RDS.
 # =============================================================================
 
 library(dplyr)
@@ -12,7 +12,7 @@ library(mgcv)
 library(purrr)
 
 # Load dataset and filter
-deaths_df <- readRDS("input-data-processed/mort.RDS") |>
+deaths_df <- readRDS("input-data-processed/mort_by_grouped_mun.RDS") |>
   filter(year >= 1990)
 
 # Aggregate delay distribution by region

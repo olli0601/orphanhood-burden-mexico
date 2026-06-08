@@ -1,15 +1,17 @@
 # =============================================================================
-# ch1_040_clean_mort.R  ·  Chapter 1 — Mortality cleaning
+# ch1_040_clean_mort.R  ·  Chapter 1 — Mortality cleaning (original municipalities)
 # Clean and harmonise the per-year INEGI registered-death files into death
 # counts by municipality x sex x 5-year age group x year; build the population
-# and geographic-lookup tables used downstream.
+# and geographic-lookup tables used downstream. Works at ORIGINAL-municipality
+# level and writes mort.RDS. The grouped-municipality counterpart is
+# ch3_010_clean_mortality_by_grouped_mun.R, which writes mort_by_grouped_mun.RDS.
 #
 # Loads the supplied per-year mortality (input-data-processed/mortality datasets/),
 # joins population (R/load_population) + IMM_2020 + the ch2 grouping.
 # Reads : input-data-processed/mortality datasets/*.RDS, grouped_municipality_50000.RDS (ch2),
 #         input-data-raw/population/...1_Grupo_Quinq..., input-data-raw/marginalization/IMM_2020.xls
 # Writes: input-data-processed/{mort.RDS, population.RDS, geo_info.RDS}
-# Run after: ch1_005, ch2_010
+# Run after: ch1_015, ch2_010
 # =============================================================================
 
 #############################################
@@ -32,13 +34,16 @@ source("R/preprocess_mortality.R"); source("R/rates.R"); source("R/plots.R")
 source("R/load_population.R")
 source("R/marginalization.R")
 source("R/load_year_panels.R")
+source("R/grouped_mun.R")
+
+fig_dir <- "output/ch1"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load the SUPPLIED per-year mortality datasets into mort_YYYY objects. These
 # are the output of preprocess_mortality() on the raw INEGI files; loading them
 # here lets the pipeline start from input-data-processed/ without the raw files.
 # (To regenerate from raw instead, loop the INEGI files through
-# preprocess_mortality() as in ch1_005 / the git history.)
-# Run ch1_005_bootstrap_from_processed.R first.
+# preprocess_mortality() as in ch1_015 / the git history.)
+# Run ch1_015_bootstrap_from_processed.R first.
 mort_panel <- load_year_panels("mortality datasets")
 
 
@@ -81,7 +86,7 @@ p <- ggplot(data_summary, aes(x = factor(year_reg), y = count, fill = factor(yea
         legend.box.spacing = unit(0.5, "cm"))
 
 print(p)
-
+ggsave(file.path(fig_dir, "ch1_040_reg_deaths_by_year.pdf"), p, width = 12, height = 8)
 
 # Convert the data to a proportion for pie charts
 data_summary_pie <- data_summary %>%
@@ -106,7 +111,7 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
 print(p_pie)
-
+ggsave(file.path(fig_dir, "ch1_040_death_year_dist_pie.pdf"), p_pie, width = 12, height = 8)
 
 # Combine the cleaned datasets together and aggregate counts in case of duplicate groups
 deaths <- mort_panel |>
@@ -114,8 +119,9 @@ deaths <- mort_panel |>
   summarise(deaths = sum(deaths), .groups = "drop")
 
 deaths <- deaths |> filter(year >= 1990 & year < 2024)
-grouped_municipality <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
-deaths <- left_join(deaths, grouped_municipality |> select(state_name, mun_name, mun, group_id), by ="mun")
+# Attach group_id (+ names) from the ch2 grouping; keeps original-mun rows (mort.RDS
+# stays mun-level). attach_group_id drops sf geometry. See R/grouped_mun.R.
+deaths <- attach_group_id(deaths, cols = c("state_name", "mun_name", "mun", "group_id"))
 
 # --------- GROUP BY THE NEW MUNICIPALITIES ---------------
 deaths <- deaths |>
@@ -154,7 +160,7 @@ names(my_colors) <- delay_levels
 
 #---------- BARPLOT ------------
 ## Total deaths
-ggplot(deaths_summary, aes(x = factor(year_reg), y = log(total_deaths), fill = factor(delay))) +
+p_total_deaths_delay <- ggplot(deaths_summary, aes(x = factor(year_reg), y = log(total_deaths), fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = my_colors) +
   labs(
@@ -164,9 +170,10 @@ ggplot(deaths_summary, aes(x = factor(year_reg), y = log(total_deaths), fill = f
     title = "Total Deaths by Occurrence Year and Reporting Year"
   ) +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch1_040_total_deaths_delay.pdf"), p_total_deaths_delay, width = 8, height = 6)
 
 ## Proportion -- DELAY IN THE FUTURE
-ggplot(deaths_prop_occ, aes(x = factor(year), y = (prop_deaths), fill = factor(delay))) +
+p_delay_by_occurrence <- ggplot(deaths_prop_occ, aes(x = factor(year), y = (prop_deaths), fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_x_discrete(limits = as.character(1990:2023))+
   scale_fill_manual(values = my_colors) +
@@ -178,10 +185,11 @@ ggplot(deaths_prop_occ, aes(x = factor(year), y = (prop_deaths), fill = factor(d
     subtitle = "Each bar shows the proportion of deaths by how many years later they were registered"
   ) +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch1_040_delay_by_occurrence.pdf"), p_delay_by_occurrence, width = 8, height = 6)
 
 
 ## Proportion -- DELAY IN THE PAST
-ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
+p_delay_by_registration <- ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_x_discrete(limits = as.character(1990:2023)) +
   scale_fill_manual(values = my_colors) +
@@ -193,9 +201,10 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor
     subtitle = "Each bar shows the proportion of registered deaths by how many years earlier the death occurred"
   ) +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch1_040_delay_by_registration.pdf"), p_delay_by_registration, width = 8, height = 6)
 #------
 
-ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
+p_delay_pct_by_reg <- ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = my_colors) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
@@ -206,6 +215,7 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor
     title = "Proportion of Deaths by Occurrence Year and Reporting Delay"
   ) +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch1_040_delay_pct_by_reg.pdf"), p_delay_pct_by_reg, width = 8, height = 6)
 
 
 
@@ -267,6 +277,7 @@ std_raw$mpi <- as.numeric(std_raw$mpi)
 # ---------------------Plot mortality rate against mpi -------------------------
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (mortality)")
 print(p_raw_pts)
+ggsave(file.path(fig_dir, "ch1_040_std_rate_2023.pdf"), p_raw_pts, width = 8, height = 6)
 
 #------------------------ Iterate over the years -------------------------------
 years <- seq(1990, 2023, 1)
@@ -284,6 +295,7 @@ for (yr in years) {
   
   p_raw_pts <- plot_std_rate(data = std_raw, tt= paste("Raw data (mortality) - Year", yr))
   print(p_raw_pts)
+  ggsave(file.path(fig_dir, paste0("ch1_040_std_rate_", yr, ".pdf")), p_raw_pts, width = 8, height = 6)
 }
 
 # Arrange all the plots in a 3x6 grid (3 rows, 6 columns)
@@ -304,6 +316,7 @@ p_raw_pts <- plot_std_rate(data = std_raw_all, tt = "Raw data (mortality) - Year
   facet_wrap(~ year)
 
 print(p_raw_pts)
+ggsave(file.path(fig_dir, "ch1_040_std_rate_multiyear.pdf"), p_raw_pts, width = 12, height = 8)
 #------------------------------------------------------------------------------
 ######
 #First: group by year, sex and age
@@ -320,15 +333,16 @@ std_age_sex <- compute_national_std_rate_age_gender(mort_national)
 std_age_sex <- std_age_sex %>% filter(year == 2023)
 
 
-#Plot 
-ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
+#Plot
+p_std_rate_age_2023 <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
   geom_line() +
   geom_point()+
   facet_wrap(~ sex, nrow = 1) +
   labs(title = "Standardized Mortality Rate by Age Group",
        x = "Age Group",
        y = "Standardized Mortality Rate") +
-  theme_minimal() 
+  theme_minimal()
+ggsave(file.path(fig_dir, "ch1_040_std_rate_age_2023.pdf"), p_std_rate_age_2023, width = 12, height = 8)
 
 
 std_age_sex <- std_age_sex %>% arrange(year, sex, age)
@@ -353,8 +367,7 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
-
-
+ggsave(file.path(fig_dir, "ch1_040_std_rate_age_sex.pdf"), p, width = 12, height = 8)
 
 
 

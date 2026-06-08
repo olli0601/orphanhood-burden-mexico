@@ -13,7 +13,7 @@ library(readr)
 # deaths: year, age, sex, deaths
 # fertility: year, age, sex, fertility_rate
 
-deaths_df <- readRDS("input-data-processed/mort.RDS")        # age: 15-94
+deaths_df <- readRDS("input-data-processed/mort_by_grouped_mun.RDS")        # age: 15-94
 fertility_df <- readRDS("input-data-processed/fert.RDS")
 
 # --- 2. Define Parameters ---

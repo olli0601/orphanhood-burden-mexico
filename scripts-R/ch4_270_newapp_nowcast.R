@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_270_newapp_nowcast.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Alternative nowcast: Poisson plug-in Stan model with reduce_sum threading, producing national delay-adjusted birth totals.
-# Reads input-data-processed/{population_new_mun,births_new_mun}.RDS, generates+compiles a Stan model -> output/ch4/*.png + fit RDS.
+# Reads input-data-processed/{population_grouped_mun,births_grouped_mun}.RDS, generates+compiles a Stan model -> output/ch4/*.png + fit RDS.
 # =============================================================================
 source("R/rates.R")
 
@@ -27,8 +27,8 @@ today_date <- as.Date("2023-12-31")
 year_now   <- 2023
 
 # Paths (edit if needed)
-pop_path    <- "input-data-processed/population_new_mun.RDS"
-births_path <- "input-data-processed/births_new_mun.RDS"
+pop_path    <- "input-data-processed/population_grouped_mun.RDS"
+births_path <- "input-data-processed/births_grouped_mun.RDS"
 
 # Model controls
 alpha_dirich     <- 1       # Dirichlet smoothing for π_d

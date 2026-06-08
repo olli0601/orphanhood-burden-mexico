@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_280_baseline_model.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Simple baseline reporting-delay model (reference for the fuller nowcasts).
-# Reads input-data-processed/deaths_new_mun.RDS.
+# Reads input-data-processed/deaths_grouped_mun.RDS.
 # =============================================================================
 
 # Load required packages
@@ -9,7 +9,7 @@ library(dplyr)
 library(tidyr)
 
 # Read your dataset
-deaths <- readRDS("input-data-processed/deaths_new_mun.RDS")
+deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS")
 to_exclude <- c(as.character(1:15), "80-84")
 
 df <- deaths[!deaths$age %in% to_exclude, ]

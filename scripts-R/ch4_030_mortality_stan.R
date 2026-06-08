@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_030_mortality_stan.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Hierarchical Bayesian model for DEATHS (analogue of the fertility model), anchored to national age-sex mortality (CmdStan).
-# Reads input-data-processed/{mort,geo_info_new_mun,index_marg}.RDS, scripts-R/mortality_v1.stan -> writes output/ch4/*_fit.RDS.
+# Reads input-data-processed/{mort,geo_info_grouped_mun,index_marg}.RDS, scripts-R/mortality_v1.stan -> writes output/ch4/*_fit.RDS.
 # =============================================================================
 
 # JOINT MODEL FOR NATIONAL COUNT AND MUNICIPALITY DEATHS
@@ -10,8 +10,8 @@ suppressMessages({
   library(tidyverse); library(reshape2); library(cmdstanr); library(posterior); library(bayesplot)
 })
 
-mort      <- readRDS(file = "input-data-processed/mort.RDS")
-geo_info  <- readRDS(file = "input-data-processed/geo_info_new_mun.RDS")
+mort      <- readRDS(file = "input-data-processed/mort_by_grouped_mun.RDS")
+geo_info  <- readRDS(file = "input-data-processed/geo_info_grouped_mun.RDS")
 mort <- mort |>
   filter(year >=1990)
 

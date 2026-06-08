@@ -1,11 +1,16 @@
 # =============================================================================
-# ch3_010_clean_mortality.R  ·  Chapter 3 — Mortality at new-municipality level
-# Re-express deaths on the aggregated municipalities and merge with population,
-# geography and marginalization to produce the analysis-ready mortality table.
+# ch3_010_clean_mortality_by_grouped_mun.R  ·  Chapter 3 — Mortality by grouped municipality
+# Re-express deaths on the AGGREGATED (grouped) municipalities and merge with the
+# grouped population, geography and (interpolated) marginalization to produce the
+# analysis-ready mortality table at grouped-municipality level. This is the
+# grouped counterpart of ch1_040_clean_mort.R (which stays at original-municipality
+# level); the two intentionally write different files (mort_by_grouped_mun.RDS vs
+# mort.RDS).
 #
 # Reads : input-data-processed/{deaths, grouped_municipality_*, geo_info*,
 #         population*, marg_index}.RDS
-# Writes: input-data-processed/{deaths_new_mun, mort}.RDS
+# Writes: input-data-processed/{deaths_grouped_mun, mort_by_grouped_mun}.RDS
+#         output/ch3/ch3_010_by_grouped_mun_*.pdf
 # Run after: ch1_060, ch2_010
 # =============================================================================
 
@@ -20,7 +25,8 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 library(sf)
-source("R/rates.R"); source("R/plots.R"); source("R/load_year_panels.R")
+source("R/rates.R"); source("R/plots.R"); source("R/load_year_panels.R"); source("R/grouped_mun.R")
+fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 ################################################################################
 
 #---------------------------- SHOW DELAY REPORTING ----------------------------
@@ -62,7 +68,7 @@ names(my_colors) <- delay_levels
 ## Total deaths
 deaths_summary <- deaths_summary |>
   filter(year >=1990)
-ggplot(deaths_summary, aes(x = factor(year), y = (total_deaths), fill = factor(delay))) +
+p_deaths_by_delay_bar <- ggplot(deaths_summary, aes(x = factor(year), y = (total_deaths), fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = my_colors) +
   labs(
@@ -76,9 +82,10 @@ ggplot(deaths_summary, aes(x = factor(year), y = (total_deaths), fill = factor(d
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_deaths_by_delay_bar.pdf"), p_deaths_by_delay_bar, width = 8, height = 6)
 
 ## Proportion -- DELAY IN THE FUTURE
-ggplot(deaths_prop_occ, aes(x = factor(year),
+p_delay_prop_by_occurrence <- ggplot(deaths_prop_occ, aes(x = factor(year),
                             y = prop_deaths,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -97,11 +104,12 @@ ggplot(deaths_prop_occ, aes(x = factor(year),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_delay_prop_by_occurrence.pdf"), p_delay_prop_by_occurrence, width = 8, height = 6)
 
 
 
 ## Proportion -- DELAY IN THE PAST
-ggplot(deaths_prop_reg, aes(x = factor(year_reg),
+p_delay_prop_by_registration <- ggplot(deaths_prop_reg, aes(x = factor(year_reg),
                             y = prop_deaths,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -120,6 +128,7 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80")
   )
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_delay_prop_by_registration.pdf"), p_delay_prop_by_registration, width = 8, height = 6)
 
 
 ################################################################################
@@ -128,31 +137,21 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg),
 
 ################################################################################
 
-grouped_municipality_30000 <- readRDS("input-data-processed/grouped_municipality_30000.RDS")
-grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
-deaths <- left_join(
-  deaths,
-  grouped_municipality_50000 %>% dplyr::select(mun, group_id),
-  by = "mun"
-)
-
-# --------- GROUP BY THE NEW MUNICIPALITIES ---------------
-deaths_new_mun <- deaths |>
-  group_by(group_id, year, sex, age, year_reg)  |>
-  summarise(tot_deaths = sum(deaths), .groups = "drop") |>
+# --------- GROUP BY THE GROUPED MUNICIPALITIES (R/grouped_mun.R) ---------------
+deaths_grouped_mun <- aggregate_to_grouped_mun(deaths, "deaths", out_col = "tot_deaths") |>
   filter(!(sex == "male" & is.na(age)))
 
-deaths_new_mun <- deaths_new_mun |>
+deaths_grouped_mun <- deaths_grouped_mun |>
   filter(year >= 1990)
 
-saveRDS(deaths_new_mun, "input-data-processed/deaths_new_mun.RDS")
+saveRDS(deaths_grouped_mun, "input-data-processed/deaths_grouped_mun.RDS")
 ################################################################################
 
 #---------------------------------- GEO INFO ----------------------------------
 
 ################################################################################
 geo_info <- readRDS("input-data-processed/geo_info.RDS")
-geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
+geo_info_grouped_mun <- readRDS("input-data-processed/geo_info_grouped_mun.RDS")
 
 
 ################################################################################
@@ -160,9 +159,9 @@ geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
 #--------------------------------- POPULATION ----------------------------------
 
 ################################################################################
-population_new_mun <- readRDS("input-data-processed/population_new_mun.RDS")
-mort <- left_join(deaths_new_mun %>% dplyr::select(group_id, year, sex, age, tot_deaths, year_reg), 
-                  population_new_mun, 
+population_grouped_mun <- readRDS("input-data-processed/population_grouped_mun.RDS")
+mort <- left_join(deaths_grouped_mun %>% dplyr::select(group_id, year, sex, age, tot_deaths, year_reg), 
+                  population_grouped_mun, 
                   by = c("group_id", "year", "sex", "age"))
 
 mort$tot_deaths[is.na(mort$tot_deaths)] <- 0
@@ -178,7 +177,7 @@ mort<- mort %>%
 
 mort <- mort |>
   filter(!age %in% 1:15)
-saveRDS(mort, file = "input-data-processed/mort.RDS")
+saveRDS(mort, file = "input-data-processed/mort_by_grouped_mun.RDS")
 ################################################################################
 
 #------------------------------------- MPI -------------------------------------
@@ -243,7 +242,7 @@ df_summary <- df_mort |>
   )
 
 # Plot trends
-ggplot(df_summary, aes(x = year, y = mortality_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
+p_mortality_trends_quintile <- ggplot(df_summary, aes(x = year, y = mortality_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
   geom_line(linewidth = 1) +
   facet_wrap(~ sex) +
   theme_minimal() +
@@ -253,6 +252,7 @@ ggplot(df_summary, aes(x = year, y = mortality_rate, color = as.factor(poverty_q
     y = "Average Mortality Rate",
     color = "Poverty Quintile"
   )
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_mortality_trends_quintile.pdf"), p_mortality_trends_quintile, width = 8, height = 6)
 
 df_mort_std <- compute_std_mort_rate(df_mort)
 df_mort_std <- left_join(df_mort_std, index_marg, by=c("group_id", "year"))
@@ -270,7 +270,7 @@ df_mort_std <- df_mort_std|>
   )
 
 
-ggplot(df_mort_std, aes(x = year, y = std_mort_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
+p_std_mortality_trends_quintile <- ggplot(df_mort_std, aes(x = year, y = std_mort_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
   geom_line(linewidth = 1) +
   facet_wrap(~ sex) +
   theme_minimal() +
@@ -280,6 +280,7 @@ ggplot(df_mort_std, aes(x = year, y = std_mort_rate, color = as.factor(poverty_q
     y = "Average Standardized Mortality Rate",
     color = "Poverty Quintile"
   )
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_std_mortality_trends_quintile.pdf"), p_std_mortality_trends_quintile, width = 8, height = 6)
 
 
 
@@ -291,7 +292,7 @@ ggplot(df_mort_std, aes(x = year, y = std_mort_rate, color = as.factor(poverty_q
 ################################################################################
 std_raw <- compute_std_mort_rate(df_2023_mort)
 std_raw <- std_raw %>% 
-  left_join(y = geo_info_new_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
+  left_join(y = geo_info_grouped_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
   left_join(y = index_marg, by = c("group_id", "year")) %>% 
   mutate(capital = factor(capital))
 std_raw <- std_raw %>% rename("mpi"="IMN")
@@ -300,6 +301,7 @@ std_raw$mpi <- as.numeric(std_raw$mpi)
 # ---------------------Plot mortality rate against mpi -------------------------
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (mortality)")
 print(p_raw_pts)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_std_rate_vs_mpi.pdf"), p_raw_pts, width = 8, height = 6)
 
 
 ################################################################################
@@ -307,7 +309,7 @@ print(p_raw_pts)
 #------------------------- National mortality rate -----------------------------
 
 ################################################################################
-mort <- readRDS("input-data-processed/mort.RDS")
+mort <- readRDS("input-data-processed/mort_by_grouped_mun.RDS")
 mort <- mort %>%
   filter(year >= 2000)
 
@@ -355,20 +357,22 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_std_rate_age_sex.pdf"), p, width = 12, height = 8)
 
 
 std_age_sex <- std_age_sex %>% filter(year == 2023)
 
 
-#Plot 
-ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
+#Plot
+p_std_rate_age_2023 <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
   geom_line() +
   geom_point()+
   facet_wrap(~ sex, nrow = 1) +
   labs(title = "Standardized Mortality Rate by Age Group",
        x = "Age Group",
        y = "Standardized Mortality Rate") +
-  theme_minimal() 
+  theme_minimal()
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_std_rate_age_2023.pdf"), p_std_rate_age_2023, width = 8, height = 6)
 
 
 ################################################################################
@@ -419,6 +423,7 @@ p_timeseries_raw <- ggplot(mort_trends, aes(x = year, y = avg_mortality_rate,
   )
 
 print(p_timeseries_raw)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_timeseries_raw_quintile.pdf"), p_timeseries_raw, width = 8, height = 6)
 
 df_mort_std_plot <- df_mort_std |>
   group_by(year, poverty_quintile) |>
@@ -447,6 +452,7 @@ p_timeseries_std <- ggplot(df_mort_std_plot, aes(x = year, y = std_mort_rate,
   )
 
 print(p_timeseries_std)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_timeseries_std_quintile.pdf"), p_timeseries_std, width = 8, height = 6)
 
 ################################################################################
 # 2. SCATTER PLOTS: MPI vs. standardized mortality rates
@@ -486,6 +492,7 @@ p_scatter_sex <- ggplot(scatter_data, aes(x = mpi, y = std_mort_rate, color = se
   )
 
 print(p_scatter_sex)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_mpi_vs_mortality_sex.pdf"), p_scatter_sex, width = 8, height = 6)
 
 # Scatter plot by capital status
 p_scatter_capital <- ggplot(scatter_data, aes(x = mpi, y = std_mort_rate, color = capital_label)) +
@@ -509,6 +516,7 @@ p_scatter_capital <- ggplot(scatter_data, aes(x = mpi, y = std_mort_rate, color 
   )
 
 print(p_scatter_capital)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_mpi_vs_mortality_capital.pdf"), p_scatter_capital, width = 8, height = 6)
 
 ################################################################################
 # 3. BOX PLOTS: Delay distributions by demographic groups  
@@ -558,6 +566,7 @@ p_box_sex_poverty <- ggplot(delay_data, aes(x = poverty_label, y = delay, fill =
   )
 
 print(p_box_sex_poverty)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_delay_box_sex_poverty.pdf"), p_box_sex_poverty, width = 8, height = 6)
 
 # Box plot by age groups
 p_box_age <- ggplot(delay_data, aes(x = age_group_broad, y = delay, fill = age_group_broad)) +
@@ -581,13 +590,14 @@ p_box_age <- ggplot(delay_data, aes(x = age_group_broad, y = delay, fill = age_g
   )
 
 print(p_box_age)
+ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_delay_box_age.pdf"), p_box_age, width = 8, height = 6)
 
 ################################################################################
 # 4. CHOROPLETH MAPS: Geographic patterns of delays and mortality
 ################################################################################
 
 # Load spatial data if available
-if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
+if(exists("geo_info_grouped_mun") && "sf" %in% class(geo_info_grouped_mun)) {
   
   # Prepare geographic data for delays
   delay_geo_data <- delay_data %>%
@@ -598,7 +608,7 @@ if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
       prop_delayed = mean(delay > 0, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    right_join(geo_info_new_mun, by = "group_id") %>%
+    right_join(geo_info_grouped_mun, by = "group_id") %>%
     st_as_sf()
   
   # Choropleth map - Average delay
@@ -617,7 +627,8 @@ if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
     )
   
   print(p_map_delay)
-  
+  ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_map_avg_delay.pdf"), p_map_delay, width = 8, height = 8)
+
   # Prepare geographic data for mortality
   mortality_geo_data <- std_raw %>%
     group_by(group_id) %>%
@@ -626,7 +637,7 @@ if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
       avg_mpi = mean(mpi, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    right_join(geo_info_new_mun, by = "group_id") %>%
+    right_join(geo_info_grouped_mun, by = "group_id") %>%
     st_as_sf()
   
   # Choropleth map - Standardized mortality
@@ -646,7 +657,8 @@ if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
     )
   
   print(p_map_mortality)
-  
+  ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_map_std_mortality.pdf"), p_map_mortality, width = 8, height = 8)
+
   # Choropleth map - MPI
   p_map_mpi <- ggplot(mortality_geo_data) +
     geom_sf(aes(fill = avg_mpi), color = "white", size = 0.1) +
@@ -664,9 +676,10 @@ if(exists("geo_info_new_mun") && "sf" %in% class(geo_info_new_mun)) {
     )
   
   print(p_map_mpi)
-  
+  ggsave(file.path(fig_dir, "ch3_010_by_grouped_mun_map_mpi.pdf"), p_map_mpi, width = 8, height = 8)
+
 } else {
-  print("Note: Geographic data (geo_info_new_mun) not available as sf object for choropleth maps")
+  print("Note: Geographic data (geo_info_grouped_mun) not available as sf object for choropleth maps")
   print("Please ensure the spatial data is loaded and has geometry information")
 }
 

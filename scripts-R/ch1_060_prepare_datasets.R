@@ -10,9 +10,9 @@
 # index_marg/im.tmp) are guarded/skipped pending raw INEGI extraction.
 # Reads : input-data-processed/{fertility,mortality} datasets/, grouped_municipality_50000.RDS,
 #         aggregated_muni_50000.RDS, geo_info.RDS, input-data-raw/marginalization/IMM_{2020.xls,DP2_2015.xlsx,DP2_2010.xlsx}
-# Writes: input-data-processed/{deaths, births, births_new_mun, geo_info, geo_info_new_mun,
-#         population, population_new_mun, mpi_mun, mpi_classified, mpi_new_mun, mpi_imputed,
-#         marg_index, index_new_mun, index_marg}.RDS
+# Writes: input-data-processed/{deaths, births, births_grouped_mun, geo_info, geo_info_grouped_mun,
+#         population, population_grouped_mun, mpi_mun, mpi_classified, mpi_grouped_mun, mpi_imputed,
+#         marg_index, index_grouped_mun, index_marg}.RDS
 # Run after: ch1_050, ch2_010
 # =============================================================================
 
@@ -72,12 +72,12 @@ geo_info <- geo_info %>%
 # group_id in ch2); attributes (state, capital) summarised from geo_info.
 geo_attrs <- geo_info |> group_by(group_id) |>
   summarise(state_name = first(state_name), state = first(state), capital = first(capital), .groups = "drop")
-geo_info_new_mun <- aggregated_muni_50000 |> select(group_id) |> left_join(geo_attrs, by = "group_id")
-geo_info_new_mun$capital[geo_info_new_mun$group_id %in% c("06002", "30087")] <- 1
+geo_info_grouped_mun <- aggregated_muni_50000 |> select(group_id) |> left_join(geo_attrs, by = "group_id")
+geo_info_grouped_mun$capital[geo_info_grouped_mun$group_id %in% c("06002", "30087")] <- 1
 
 
 saveRDS(geo_info, file = "input-data-processed/geo_info.RDS")
-saveRDS(geo_info_new_mun, file = "input-data-processed/geo_info_new_mun.RDS")
+saveRDS(geo_info_grouped_mun, file = "input-data-processed/geo_info_grouped_mun.RDS")
 
 ################################################################################
 
@@ -91,12 +91,12 @@ population <- population |>
               select(mun, group_id) |>
               sf::st_drop_geometry(), by = "mun")
 
-population_new_mun <- population |> 
+population_grouped_mun <- population |> 
   group_by(group_id, year, sex, age) |>
   summarise(population = sum(population), .groups = "drop")
 
 saveRDS(population %>% dplyr::select(-dplyr::any_of("group_id")), file = "input-data-processed/population.RDS")
-saveRDS(population_new_mun, file = "input-data-processed/population_new_mun.RDS")
+saveRDS(population_grouped_mun, file = "input-data-processed/population_grouped_mun.RDS")
 
 
 ################################################################################
@@ -135,18 +135,32 @@ grouped_municipality_50000 <- grouped_municipality_50000 |>
   st_drop_geometry() |>
   select(mun, group_id)
 
+# ---- Urban/rural classification (from IMM small_towns_pct = PL.5000, the share of
+# population living in localities < 5,000 inhabitants). A grouped unit is "Rural"
+# when its population-weighted small-locality share is >= 50%, else "Urban".
+# Saved as rural_urban_area.RDS, consumed by ch3_030 / ch4 nowcast EDA. ----
+rural_urban_area <- index_2020 |>
+  dplyr::transmute(mun, population, small_towns_pct = as.numeric(small_towns_pct)) |>
+  dplyr::left_join(grouped_municipality_50000, by = "mun") |>
+  dplyr::filter(!is.na(group_id)) |>
+  dplyr::group_by(group_id) |>
+  dplyr::summarise(small_towns_pct = weighted.mean(small_towns_pct, w = population, na.rm = TRUE),
+                   .groups = "drop") |>
+  dplyr::mutate(area_type = dplyr::if_else(small_towns_pct >= 50, "Rural", "Urban"))
+saveRDS(rural_urban_area, "input-data-processed/rural_urban_area.RDS")
+
 # Perform the join
-combined_index_new_mun <- left_join(
+combined_index_grouped_mun <- left_join(
   combined_index,
   grouped_municipality_50000,
   by = "mun"
 )
 
-mpi_new_mun <- combined_index_new_mun |>
+mpi_grouped_mun <- combined_index_grouped_mun |>
   group_by(group_id, year) |>
   summarise(mpi = weighted.mean(IMN, w = population), .groups = "drop")
 
-thresholds <- combined_index_new_mun |>
+thresholds <- combined_index_grouped_mun |>
   group_by(GM) |>
   summarise(
     min_value = min(IMN, na.rm = TRUE),
@@ -154,7 +168,7 @@ thresholds <- combined_index_new_mun |>
   ) |>
   arrange(min_value)
 
-classified_data <- combined_index_new_mun %>%
+classified_data <- combined_index_grouped_mun %>%
   group_by(group_id, year) %>%
   summarise(IMN = mean(IMN, na.rm = TRUE), .groups = "drop") %>%
   mutate(
@@ -176,7 +190,7 @@ classified_data <- combined_index_new_mun %>%
 saveRDS(classified_data, file = "input-data-processed/mpi_classified.RDS")
 
 #------------------------------------------------------------------------------
-index <- mpi_new_mun %>%
+index <- mpi_grouped_mun %>%
   complete(group_id, year = 2010:2020) %>%
   group_by(group_id) %>%
   arrange(year, .by_group = TRUE) %>%
@@ -200,7 +214,7 @@ index <- mpi_new_mun %>%
   }) %>%
   ungroup()
 
-saveRDS(index, "input-data-processed/mpi_new_mun.RDS")
+saveRDS(index, "input-data-processed/mpi_grouped_mun.RDS")
 
 index <- index %>%
   mutate(
@@ -222,9 +236,9 @@ index <- index |> dplyr::rename(IMN = mpi)
 
 saveRDS(index, file = "input-data-processed/marg_index.RDS")
 
-# index_new_mun = group-level classified marginalization (group_id, year, IMN, GM);
+# index_grouped_mun = group-level classified marginalization (group_id, year, IMN, GM);
 # mpi_imputed = the interpolated MPI (group_id, year, mpi). Both consumed by ch3.
-saveRDS(index, file = "input-data-processed/index_new_mun.RDS")
+saveRDS(index, file = "input-data-processed/index_grouped_mun.RDS")
 # index_marg: one population-weighted marginalization value per new municipality
 index_marg <- combined_index |>
   left_join(geo_info |> dplyr::select(mun, group_id), by = "mun") |>
@@ -233,7 +247,7 @@ index_marg <- combined_index |>
   summarise(marg_index_weighted = weighted.mean(as.numeric(IMN), population, na.rm = TRUE),
             .groups = "drop")
 saveRDS(index_marg, file = "input-data-processed/index_marg.RDS")
-file.copy("input-data-processed/mpi_new_mun.RDS",
+file.copy("input-data-processed/mpi_grouped_mun.RDS",
           "input-data-processed/mpi_imputed.RDS", overwrite = TRUE)
 
 ################################################################################
@@ -247,11 +261,11 @@ saveRDS(births, file = "input-data-processed/births.RDS")
 
 grouped_mun_lookup <- readRDS("input-data-processed/grouped_municipality_50000.RDS") |>
   sf::st_drop_geometry() |> dplyr::select(mun, group_id)
-births_new_mun <- births |>
+births_grouped_mun <- births |>
   dplyr::left_join(grouped_mun_lookup, by = "mun") |>
   group_by(group_id, year, sex, age, year_reg) |>
   summarise(births = sum(births), .groups = "drop")
-saveRDS(births_new_mun, file = "input-data-processed/births_new_mun.RDS")
+saveRDS(births_grouped_mun, file = "input-data-processed/births_grouped_mun.RDS")
 
 # index_marg / im.tmp (mun-level detail) feed Chapter 5; need fuller mun-level MPI.
 message("ch1_060: skipping index_marg / im.tmp (need fuller mun-level MPI).")

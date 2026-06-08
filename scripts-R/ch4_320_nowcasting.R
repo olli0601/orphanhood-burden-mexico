@@ -1,14 +1,14 @@
 # =============================================================================
 # ch4_320_nowcasting.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # NIMBLE-based nowcasting exploration.
-# Reads input-data-processed/mort.RDS.
+# Reads input-data-processed/mort_by_grouped_mun.RDS.
 # =============================================================================
 
 library(dplyr)
 library(tidyr)
 library(keras)
 
-deaths_df <- readRDS("input-data-processed/mort.RDS")      
+deaths_df <- readRDS("input-data-processed/mort_by_grouped_mun.RDS")      
 
 delay_matrix <- deaths_df %>%
   group_by(year, delay) %>%

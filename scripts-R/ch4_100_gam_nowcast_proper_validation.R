@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_100_gam_nowcast_proper_validation.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Train/test-split validation of the GAM nowcast; produces validation & test predictions and metrics.
-# Reads input-data-processed/{births_new_mun,population_new_mun}.RDS -> writes input-data-processed/{municipality_models_proper_validation,validation_*,test_*}.RDS, output/ch4/*.png.
+# Reads input-data-processed/{births_grouped_mun,population_grouped_mun}.RDS -> writes input-data-processed/{municipality_models_proper_validation,validation_*,test_*}.RDS, output/ch4/*.png.
 # =============================================================================
 
 ################################################################################
@@ -30,12 +30,12 @@ cat("2. Then proceed with nowcasting\n\n")
 cat("=== LOADING DATA ===\n")
 
 # Load data
-births <- readRDS("input-data-processed/births_new_mun.RDS") %>%
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") %>%
   rename(event_year = year, reg_year = year_reg, municipality = group_id, 
          age_group = age, n = births) %>%
   mutate(reg_year = as.numeric(reg_year), delay = reg_year - event_year)
 
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") %>%
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") %>%
   rename(event_year = year, municipality = group_id, age_group = age) %>%
   filter(!age_group %in% c("00-04", "05-09", "10-14"))
 

@@ -17,7 +17,27 @@ supervised by Oliver Ratmann (external) and Victor Panaretos (EPFL).
   — per-year `fert_YYYY`/`mort_YYYY` + derived intermediates.
 - `output/` — generated figures/tables (gitignored), in per-chapter subfolders.
 
-## Environment (pixi)
+## Environment (VScode and pixi)
+
+**VS Code is the recommended editor** for further work: the repo ships `.vscode/settings.json`
+(an R terminal profile wired to the pixi environment via `.vscode/orphanhood_pixi_r.sh`) and
+`.vscode/tasks.json` (the pixi setup/run tasks). On first open, VS Code will offer the
+recommended extensions from `.vscode/extensions.json`. The extensions we use (install by exact
+identifier):
+
+| Purpose                              | Extension           | Identifier                              |
+| ------------------------------------ | ------------------- | --------------------------------------- |
+| Environment                          | Pixi                | `prefix-dev.pixi-vscode`                |
+| R language / REPL                    | R                   | `reditorsupport.r`                      |
+| R Markdown / Quarto (`.Rmd`, `.qmd`) | Quarto              | `quarto.quarto`                         |
+| Markdown editing                     | Markdown All in One | `yzhang.markdown-all-in-one`            |
+| Markdown linting                     | markdownlint        | `davidanson.vscode-markdownlint`        |
+| Git                                  | GitLens             | `eamodio.gitlens`                       |
+| AI assistant                         | Claude Code         | `anthropic.claude-code`                 |
+| Spell check                          | Code Spell Checker  | `streetsidesoftware.code-spell-checker` |
+
+Install all at once from the integrated terminal, e.g. `code --install-extension reditorsupport.r`
+(repeat per identifier), or accept the workspace-recommended prompt.
 
 The R toolchain is managed with [pixi](https://pixi.sh) (`pixi.toml`).
 
@@ -34,32 +54,27 @@ Run any script in the environment with `pixi run Rscript <path>`. Open an R REPL
 Scripts are numbered by dependency order. Either supply the raw INEGI files and run
 from scratch, or start from the per-year datasets already in `input-data-processed/`.
 
-**0. Get raw inputs** (optional — population/marginalization/geometry + INEGI births
-2017–2024 auto-download; deaths and pre-2017 births are manual, see Data below):
+**Where the raw inputs come from.** Each source is *either* already provided *or*
+downloaded by a script (see the Data section below for the full description of each):
+
+- **Auto-downloaded** by `scripts-R/ch1_010_get_input_data_raw.R`: CONAPO population &
+  marginalization workbooks, GADM geometries, and INEGI registered-births 2017–2024
+  (stable open-data URLs).
+- **Provided not downloadable** (no scriptable URL): INEGI registered-deaths and registered-births were not downloadable automatically for several years — and are supplied here  `input-data-raw/{births,deaths}/`. Thus, script `scripts-R/ch1_015_bootstrap_from_processed.R` should run out of the box after the auto-downloadable files are retrieved.
+
+**1. Chapter 1–3 (Raw data → harmonised panels), in order:**
 
 ```bash
-pixi run Rscript scripts-R/ch1_010_get_input_data_raw.R
-```
-
-**1. Chapter 1–3 (data → harmonised panels), in order:**
-
-```bash
-pixi run Rscript scripts-R/ch1_005_bootstrap_from_processed.R   # per-year -> births/deaths/population/geo_info/marg_index
+pixi run Rscript scripts-R/ch1_010_get_input_data_raw.R        # raw population + marginalization + geometries
+pixi run Rscript scripts-R/ch1_015_bootstrap_from_processed.R  # per-year -> births/deaths/population/geo_info/marg_index
 pixi run Rscript scripts-R/ch1_040_clean_mort.R                 # -> mort.RDS
 pixi run Rscript scripts-R/ch1_050_clean_fert.R                 # -> fert.RDS (mun level)
 pixi run Rscript scripts-R/ch2_010_group_mun.R                 # municipality aggregation (519 units)
 pixi run Rscript scripts-R/ch1_060_prepare_datasets.R          # new-municipality panels + marginalization
-pixi run Rscript scripts-R/ch3_010_clean_mortality.R          # mort.RDS (new-mun)
+pixi run Rscript scripts-R/ch3_010_clean_mortality_by_grouped_mun.R   # -> mort_by_grouped_mun.RDS
 pixi run Rscript scripts-R/ch3_020_clean_fertility.R          # fert.RDS (new-mun)
 ```
 
-`ch1_005` must run first — it breaks the ch1↔ch2 circular dependency by building
-`population`/`geo_info` before the grouping. Chapters 4 (nowcasting, `scripts-R/ch4_*`
-+ `scripts-py/`) and 5 (orphanhood, `scripts-R/ch5_*`) follow.
-
-> Note: some Chapter 3–5 scripts still require raw INEGI extraction for the
-> orphans/long/monthly variants and a few EDA inputs (`type_of_mun.csv`); these are
-> work in progress.
 
 ## Data
 
@@ -90,11 +105,11 @@ INEGI advertises registered-births microdata back to 1985 on the
 [natalidad microdata page](https://www.inegi.org.mx/programas/natalidad/#microdatos), but
 only the recent open-data years expose **stable, scriptable direct URLs**:
 
-| Years | Direct URL (under `https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos/<YEAR>/`) | Auto-retrievable |
-|---|---|---|
-| 2017–2022 | `conjunto_de_datos_natalidad_<YEAR>_csv.zip` | ✅ |
-| 2023–2024 | `conjunto_de_datos_enr<YEAR>_csv.zip` | ✅ |
-| 1985–2016 | not published at the open-data path | ❌ (request-gated microdata) |
+| Years     | Direct URL (under `https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos/<YEAR>/`) | Auto-retrievable            |
+| --------- | -------------------------------------------------------------------------------------------------- | --------------------------- |
+| 2017–2022 | `conjunto_de_datos_natalidad_<YEAR>_csv.zip`                                                       | ✅                           |
+| 2023–2024 | `conjunto_de_datos_enr<YEAR>_csv.zip`                                                              | ✅                           |
+| 1985–2016 | not published at the open-data path                                                                | ❌ (request-gated microdata) |
 
 So **2017–2024 can be pulled automatically**; **1985–2016 cannot** via a clean URL — they
 sit behind the JS download widget / NADA microdata request form (the pre-2017 years used

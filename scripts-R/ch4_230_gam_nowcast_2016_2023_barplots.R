@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_230_gam_nowcast_2016_2023_barplots.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Registered vs nowcasted birth barplots (national/by-sex) for 2016-2023.
-# Reads input-data-processed/{municipality_models_proper_validation,births_new_mun,population_new_mun}.RDS -> writes nowcast prediction RDS, output/ch4/*.png.
+# Reads input-data-processed/{municipality_models_proper_validation,births_grouped_mun,population_grouped_mun}.RDS -> writes nowcast prediction RDS, output/ch4/*.png.
 # =============================================================================
 
 ################################################################################
@@ -32,12 +32,12 @@ municipality_models <- readRDS("input-data-processed/municipality_models_proper_
 successful_models <- municipality_models[map_lgl(municipality_models, ~.x$success)]
 
 # Load raw data
-births <- readRDS("input-data-processed/births_new_mun.RDS") %>%
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") %>%
   rename(event_year = year, reg_year = year_reg, municipality = group_id, 
          age_group = age, n = births) %>%
   mutate(reg_year = as.numeric(reg_year), delay = reg_year - event_year)
 
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") %>%
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") %>%
   rename(event_year = year, municipality = group_id, age_group = age) %>%
   filter(!age_group %in% c("00-04", "05-09", "10-14"))
 
@@ -564,7 +564,7 @@ cat("===========================================================================
 
 library(dplyr)
 # Calcola il massimo delay osservabile per ogni anno evento
-births <- readRDS("input-data-processed/births_new_mun.RDS") %>%
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") %>%
   rename(event_year = year, reg_year = year_reg, municipality = group_id, 
          age_group = age, n = births) %>%
   mutate(reg_year = as.numeric(reg_year), delay = reg_year - event_year)

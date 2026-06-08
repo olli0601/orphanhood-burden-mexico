@@ -20,7 +20,8 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 library(sf)
-source("R/rates.R"); source("R/plots.R"); source("R/load_year_panels.R")
+source("R/rates.R"); source("R/plots.R"); source("R/load_year_panels.R"); source("R/grouped_mun.R")
+fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 ################################################################################
 
 #---------------------------- SHOW DELAY REPORTING ----------------------------
@@ -60,7 +61,7 @@ names(my_colors) <- delay_levels
 
 #---------- BARPLOT ------------
 ## Total deaths
-ggplot(births_summary, aes(x = factor(year_reg), y = (total_births), fill = factor(delay))) +
+p_births_total_by_reg_year <- ggplot(births_summary, aes(x = factor(year_reg), y = (total_births), fill = factor(delay))) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = my_colors) +
   labs(
@@ -74,9 +75,10 @@ ggplot(births_summary, aes(x = factor(year_reg), y = (total_births), fill = fact
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
+ggsave(file.path(fig_dir, "ch3_020_births_total_by_reg_year.pdf"), p_births_total_by_reg_year, width = 8, height = 6)
 
 ## Proportion -- DELAY IN THE FUTURE
-ggplot(births_prop_occ, aes(x = factor(year),
+p_births_prop_by_occ_year <- ggplot(births_prop_occ, aes(x = factor(year),
                             y = prop_births,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -95,11 +97,12 @@ ggplot(births_prop_occ, aes(x = factor(year),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
+ggsave(file.path(fig_dir, "ch3_020_births_prop_by_occ_year.pdf"), p_births_prop_by_occ_year, width = 8, height = 6)
 
 
 
 ## Proportion -- DELAY IN THE PAST
-ggplot(births_prop_reg, aes(x = factor(year_reg),
+p_births_prop_by_reg_year <- ggplot(births_prop_reg, aes(x = factor(year_reg),
                             y = prop_births,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -118,6 +121,7 @@ ggplot(births_prop_reg, aes(x = factor(year_reg),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80")
   )
+ggsave(file.path(fig_dir, "ch3_020_births_prop_by_reg_year.pdf"), p_births_prop_by_reg_year, width = 8, height = 6)
 
 
 ################################################################################
@@ -125,18 +129,8 @@ ggplot(births_prop_reg, aes(x = factor(year_reg),
 #----------------------- GROUP BY THE NEW MUNICIPALITIES -----------------------
 
 ################################################################################
-#grouped_municipality_30000 <- readRDS("input-data-processed/grouped_municipality_30000.RDS")
-grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
-births <- left_join(births, 
-                    grouped_municipality_50000 %>% dplyr::select(mun, group_id), 
-                    by ="mun")
-
-# --------- GROUP BY THE NEW MUNICIPALITIES ---------------
-births_new_mun <- births |>
-  group_by(group_id, year, sex, age, year_reg)  |>
-  summarise(tot_births = sum(births), .groups = "drop") 
-
-births_new_mun <- births_new_mun |>
+# --------- GROUP BY THE GROUPED MUNICIPALITIES (R/grouped_mun.R) ---------------
+births_grouped_mun <- aggregate_to_grouped_mun(births, "births", out_col = "tot_births") |>
   filter(year >= 1990)
 
 ################################################################################
@@ -145,7 +139,7 @@ births_new_mun <- births_new_mun |>
 
 ################################################################################
 geo_info <- readRDS("input-data-processed/geo_info.RDS")
-geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
+geo_info_grouped_mun <- readRDS("input-data-processed/geo_info_grouped_mun.RDS")
 
 
 ################################################################################
@@ -153,9 +147,9 @@ geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
 #--------------------------------- POPULATION ----------------------------------
 
 ################################################################################
-population_new_mun <- readRDS("input-data-processed/population_new_mun.RDS")
-fert <- left_join(births_new_mun %>% dplyr::select(group_id, year, sex, age, year_reg, tot_births), 
-                  population_new_mun, 
+population_grouped_mun <- readRDS("input-data-processed/population_grouped_mun.RDS")
+fert <- left_join(births_grouped_mun %>% dplyr::select(group_id, year, sex, age, year_reg, tot_births), 
+                  population_grouped_mun, 
                   by = c("group_id", "year", "sex", "age"))
 
 fert$tot_births[is.na(fert$tot_births)] <- 0
@@ -196,13 +190,14 @@ df_2023_fert <- df_2023_fert |> drop_na()
 
 ################################################################################
 std_raw <- compute_std_fert_rate(df_2023_fert);
-std_raw <- std_raw %>% left_join(y = geo_info_new_mun |> dplyr::select(group_id, capital), by = "group_id") %>% left_join(y = index_marg, by = "group_id") %>% mutate(capital = factor(capital))
+std_raw <- std_raw %>% left_join(y = geo_info_grouped_mun |> dplyr::select(group_id, capital), by = "group_id") %>% left_join(y = index_marg, by = "group_id") %>% mutate(capital = factor(capital))
 std_raw <- std_raw %>% rename("mpi"="marg_index_weighted")
 std_raw$mpi <- as.numeric(std_raw$mpi)
 
 # ---------------------Plot mortality rate against mpi -------------------------
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (fertility)")
 print(p_raw_pts)
+ggsave(file.path(fig_dir, "ch3_020_std_fert_rate_vs_mpi.pdf"), p_raw_pts, width = 8, height = 6)
 
 
 ################################################################################
@@ -257,18 +252,20 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
+ggsave(file.path(fig_dir, "ch3_020_std_fert_rate_by_age_sex_year.pdf"), p, width = 12, height = 8)
 
 
 std_age_sex <- std_age_sex %>% filter(year == 2023)
-#Plot 
-ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
+#Plot
+p_std_fert_2023_by_sex <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
   geom_line() +
   geom_point()+
   facet_wrap(~ sex, nrow = 1) +
   labs(title = "Standardized Mortality Rate by Age Group",
        x = "Age Group",
        y = "Standardized Mortality Rate") +
-  theme_minimal() 
+  theme_minimal()
+ggsave(file.path(fig_dir, "ch3_020_std_fert_2023_by_sex.pdf"), p_std_fert_2023_by_sex, width = 8, height = 6)
 
 
 #-------------------------------------------------------------------------------
@@ -321,7 +318,7 @@ df_summary <- df_fert |>
   )
 
 # Plot trends
-ggplot(df_summary, aes(x = year, y = fertility_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
+p_fert_trends_by_quintile <- ggplot(df_summary, aes(x = year, y = fertility_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
   geom_line(linewidth = 1) +
   facet_wrap(~ sex) +
   theme_minimal() +
@@ -331,6 +328,7 @@ ggplot(df_summary, aes(x = year, y = fertility_rate, color = as.factor(poverty_q
     y = "Average Fertility Rate",
     color = "Poverty Quintile"
   )
+ggsave(file.path(fig_dir, "ch3_020_fert_trends_by_quintile.pdf"), p_fert_trends_by_quintile, width = 8, height = 6)
 
 df_fert_std <- compute_std_fert_rate(df_fert)
 df_fert_std <- left_join(df_fert_std, dplyr::mutate(index_marg, year = as.character(year)), by=c("group_id", "year"))
@@ -348,7 +346,7 @@ df_fert_std <- df_fert_std|>
   )
 
 
-ggplot(df_fert_std, aes(x = year, y = std_fert_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
+p_std_fert_trends_by_quintile <- ggplot(df_fert_std, aes(x = year, y = std_fert_rate, color = as.factor(poverty_quintile), group = poverty_quintile)) +
   geom_line(linewidth = 1) +
   facet_wrap(~ sex) +
   theme_minimal() +
@@ -358,6 +356,7 @@ ggplot(df_fert_std, aes(x = year, y = std_fert_rate, color = as.factor(poverty_q
     y = "Average Standardized Fertility Rate",
     color = "Poverty Quintile"
   )
+ggsave(file.path(fig_dir, "ch3_020_std_fert_trends_by_quintile.pdf"), p_std_fert_trends_by_quintile, width = 8, height = 6)
 
 
 

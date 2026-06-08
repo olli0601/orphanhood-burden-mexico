@@ -1,7 +1,7 @@
 # =============================================================================
 # ch5_020_calculate_orphans.R  ·  Chapter 5 — Orphanhood estimation
 # Compute expected surviving children per adult and raw orphaning events (band-first approach).
-# Reads input-data-processed/{geo_info,population_new_mun,fert,deaths,mort_df}.RDS (prefix g).
+# Reads input-data-processed/{geo_info,population_grouped_mun,fert,deaths,mort_df}.RDS (prefix g).
 # =============================================================================
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ to_band <- function(a) {
 
 g <- "input-data-processed/"
 geo_info      <- readRDS(paste0(g, "geo_info.RDS"))
-population_df <- readRDS(paste0(g, "population_new_mun.RDS"))
+population_df <- readRDS(paste0(g, "population_grouped_mun.RDS"))
 fr_raw        <- readRDS(paste0(g, "fert.RDS"))
 deaths_raw    <- readRDS(paste0(g, "deaths.RDS"))
 mort_df       <- readRDS(paste0(g, "mort_df.RDS"))

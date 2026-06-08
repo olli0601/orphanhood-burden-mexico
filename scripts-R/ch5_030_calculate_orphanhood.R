@@ -1,7 +1,7 @@
 # =============================================================================
 # ch5_030_calculate_orphanhood.R  ·  Chapter 5 — Orphanhood estimation
 # Full orphanhood incidence engine: combine fertility histories, child survival and parental deaths; adjust for double and prior orphanhood.
-# Reads input-data-processed/{geo_info,population_new_mun,fert,births_long,deaths,mort_df,grouped_municipality_50000,index_new_mun,mort}.RDS.
+# Reads input-data-processed/{geo_info,population_grouped_mun,fert,births_long,deaths,mort_df,grouped_municipality_50000,index_grouped_mun,mort}.RDS.
 # =============================================================================
 
 # Load required packages
@@ -38,7 +38,7 @@ library(purrr)
 
 #------------------------ POPULATION DATASET ------------------------------
 geo_info <- readRDS("input-data-processed/geo_info.RDS")
-population_df <- readRDS("input-data-processed/population_new_mun.RDS")
+population_df <- readRDS("input-data-processed/population_grouped_mun.RDS")
 
 population_df_long <- population_df |>
   mutate(
@@ -515,10 +515,10 @@ library(sf)
 library(ggplot2)
 library(dplyr)
 
-new_mun_50000 <- readRDS(file = "input-data-processed/grouped_municipality_50000.RDS")
+grouped_mun_50000 <- readRDS(file = "input-data-processed/grouped_municipality_50000.RDS")
 
 map_data_incidence <- left_join(
-  new_mun_50000,                      # sf object with geometry + group_id
+  grouped_mun_50000,                      # sf object with geometry + group_id
   incidence_df %>% 
     filter(year == 2023) %>%
     group_by(group_id) %>%
@@ -1026,10 +1026,10 @@ library(sf)
 library(ggplot2)
 library(dplyr)
 
-new_mun_50000 <- readRDS(file = "input-data-processed/grouped_municipality_50000.RDS")
+grouped_mun_50000 <- readRDS(file = "input-data-processed/grouped_municipality_50000.RDS")
 
 map_data <- left_join(
-  new_mun_50000,                      # sf object with geometry + group_id
+  grouped_mun_50000,                      # sf object with geometry + group_id
   prevalence_df %>% 
     filter(year == 2023) %>%
     group_by(group_id) %>%
@@ -1102,11 +1102,11 @@ ggplot(inc_sex, aes(x = year, y = orphans, color = sex)) +
 
 ################ THREE MAPS
 ## MPI
-mpi <- readRDS("input-data-processed/index_new_mun.RDS")
+mpi <- readRDS("input-data-processed/index_grouped_mun.RDS")
 mpi <- mpi |> 
   filter(year == 2020) |>
   left_join(
-    new_mun_50000 |> 
+    grouped_mun_50000 |> 
       select(group_id, geometry),
     by = "group_id"
   )
@@ -1151,7 +1151,7 @@ library(viridis)
 library(scales)
 
 # Aggregate deaths data
-deaths <- readRDS("input-data-processed/mort.RDS") |>
+deaths <- readRDS("input-data-processed/mort_by_grouped_mun.RDS") |>
   group_by(year, group_id) |>
   summarise(
     tot_deaths     = sum(tot_deaths, na.rm = TRUE),
@@ -1164,7 +1164,7 @@ deaths <- readRDS("input-data-processed/mort.RDS") |>
 deaths_map <- deaths |>
   filter(year == 2023) |>
   left_join(
-    new_mun_50000 |> select(group_id, geometry),
+    grouped_mun_50000 |> select(group_id, geometry),
     by = "group_id"
   ) |>
   mutate(

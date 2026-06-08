@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_010_nowcast_data_preparation.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Build the nowcasting data triangle (occurrence x registration delay) and supporting indices from the cleaned mortality panel.
-# Reads input-data-processed/mort.RDS -> writes input-data-processed/{z_tsd,years,groups,delays,test_df}.rds.
+# Reads input-data-processed/mort_by_grouped_mun.RDS -> writes input-data-processed/{z_tsd,years,groups,delays,test_df}.rds.
 # =============================================================================
 
 library(dplyr)
@@ -10,7 +10,7 @@ library(tidyr)
 # Columns needed: year_occurrence, year_register, municipality, sex, age_group, n
 
 # Compute delay and group id
-deaths_df <- readRDS("input-data-processed/mort.RDS") |>
+deaths_df <- readRDS("input-data-processed/mort_by_grouped_mun.RDS") |>
   filter(year>=1990)
 
 set.seed(123)

@@ -7,6 +7,10 @@ input-data-raw/
 # Generated outputs (plots, model objects, etc.)
 output/
 
+# R default graphics device dump (created at cwd by Rscript when a plot is
+# print()ed without an explicit device; figures are saved explicitly via ggsave)
+Rplots.pdf
+
 # Python artifacts
 __pycache__/
 *.pyc
@@ -16,6 +20,9 @@ __pycache__/
 .pixi/
 pixi.lock
 
-# Large regenerated intermediates (reproducible via ch1_040 / ch1_050)
-input-data-processed/fert.RDS
-input-data-processed/mort.RDS
+# Processed datasets (per-year panels + derived intermediates) — large, not
+# version controlled. Mirror copies via the Dropbox links in README (# Data).
+input-data-processed/**/*.RDS
+input-data-processed/*.RDS
+input-data-processed/**/*.rds
+input-data-processed/*.rds

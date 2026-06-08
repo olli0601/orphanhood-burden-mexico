@@ -172,6 +172,62 @@ if (length(inegi_deaths_urls) == 0) {
   }
 }
 
+# --- manual INEGI files (cannot be auto-downloaded) ------------------------
+# Births 1985-2016 and ALL deaths years are request-gated (JS widget / NADA form
+# / shared mirrors) and must be dropped into input-data-raw/{births,deaths}/ by
+# hand. The lists below are the exact filenames used in this analysis (courtesy
+# J.M. Aburto + INEGI open data). They are checked for presence on each run so a
+# missing file is reported instead of silently producing an incomplete panel.
+births_manual <- c(
+  "Natalidad 1985 Database.zip", "Natalidad Database 1986.zip",
+  "Natalidad 1987 Database.zip", "Natalidad Database 1988.zip",
+  "Natalidad 1989 Database.zip", "Natalidad Database 1990.zip",
+  "Natalidad 1991 Database.zip", "Natalidad 1992 Database.zip",
+  "Natalidad Database 1993.zip", "natalidad_base_datos_1994_dbf.zip",
+  "Birth Data 1995.zip", "Natalidad 1996 Database.zip",
+  "Natalidad 1997 Database.zip", "Natalidad 1998 Database.zip",
+  "Natalidad 1999 Database.zip", "Natalidad Base Datos 2000.zip",
+  "Natalidad Base Datos 2001.zip", "natalidad_base_datos_2002_dbf.zip",
+  "natalidad_base_datos_2003_dbf.zip", "Natalidad Base Datos 2004.zip",
+  "Birth Data 2005.zip", "Natalidad 2006 Database.zip",
+  "natalidad_base_datos_2007_dbf.zip", "Natalidad 2008 Database.zip",
+  "Natalidad 2009 Database.zip", "natalidad_base_datos_2010_dbf.zip",
+  "Natalidad Base Datos 2011.zip", "Natalidad Base Datos 2012.zip",
+  "natalidad_base_datos_2013_dbf.zip", "Natalidad Base Datos 2014.zip",
+  "Natalidad 2015 Database.zip", "Natalidad Base Datos 2016.zip"
+)
+deaths_manual <- c(
+  "General Deaths Database 1990-1994.zip",
+  "defunciones_generales_base_datos_1995_1999_dbf.zip",
+  "defunciones_generales_base_datos_2000_2004_dbf.zip",
+  "defunciones_generales_base_datos_2005_2009_dbf.zip",
+  "General Deaths Database 2010-2014.zip",
+  "defunciones_base_datos_2012_csv.zip", "defunciones_base_datos_2013_csv.zip",
+  "defunciones_base_datos_2014_csv.zip", "Defunciones Base Datos 2015.zip",
+  "Defunciones Base Datos 2016.zip", "General Deaths Dataset 2017.zip",
+  "conjunto_de_datos_defunciones_registradas_2018_csv.zip",
+  "Registered Deaths 2019 Data.zip",
+  "conjunto_de_datos_defunciones_registradas_2020_csv.zip",
+  "conjunto_de_datos_defunciones_registradas_2021_csv.zip",
+  "conjunto_de_datos_defunciones_registradas_2022_csv.zip",
+  "Registered Deaths Data 2023.zip",
+  "conjunto_de_datos_defunciones_registradas_2024_csv.zip"
+)
+
+message("== manual files check (births 1985-2016 + all deaths) ==")
+.check_manual <- function(files, subdir) {
+  miss <- files[!file.exists(file.path(dirs[subdir], files))]
+  if (length(miss) == 0) {
+    message(sprintf("  [ok  ] all %d %s files present", length(files), subdir))
+  } else {
+    message(sprintf("  [MISS] %d/%d %s files absent - add to %s/ :",
+                    length(miss), length(files), subdir, dirs[subdir]))
+    for (m in miss) message("         - ", m)
+  }
+}
+.check_manual(births_manual, "births")
+.check_manual(deaths_manual, "deaths")
+
 # ===========================================================================
 # 3. CONAPO - Indice de Marginacion Municipal (IMM)
 # ===========================================================================

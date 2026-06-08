@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_310_nowcast_new.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Updated standalone nowcast prototype.
-# Reads input-data-processed/{births_new_mun,population_new_mun,rural_urban_area}.*.
+# Reads input-data-processed/{births_grouped_mun,population_grouped_mun,rural_urban_area}.*.
 # =============================================================================
 
 ###############################################################################
@@ -36,7 +36,7 @@ set.seed(20250707)
 ## --------------------------------------------------------------------------
 ## 1:  DATA IN + DELAY TRIANGLE
 ## --------------------------------------------------------------------------
-births <- readRDS("input-data-processed/births_new_mun.RDS") |>
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") |>
   rename(event_year   = year,
          reg_year     = year_reg,
          municipality = group_id,
@@ -45,9 +45,9 @@ births <- readRDS("input-data-processed/births_new_mun.RDS") |>
   mutate(reg_year = as.numeric(reg_year),
          delay = reg_year - event_year)
 
-rural_urban <- read_parquet("input-data-processed/rural_urban_area.parquet")
+rural_urban <- readRDS("input-data-processed/rural_urban_area.RDS")
 
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") |>
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") |>
   rename(event_year   = year,
          municipality = group_id,
          age_group    = age) |>
@@ -212,7 +212,7 @@ year_totals <- incidence_open |>
 #   municipality × age_group × sex strata
 ###############################################################################
 ## 1 ─ Read data & build full delay triangle --------------------------------
-births <- readRDS("input-data-processed/births_new_mun.RDS") %>%
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") %>%
   rename(event_year = year,
          reg_year   = year_reg,
          municipality = group_id,
@@ -220,7 +220,7 @@ births <- readRDS("input-data-processed/births_new_mun.RDS") %>%
          n            = births) %>%
   mutate(reg_year = as.numeric(reg_year))
 
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") %>%
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") %>%
   rename(event_year = year,
          municipality = group_id,
          age_group    = age) %>%

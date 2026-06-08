@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_080_gam_nowcast_baseline.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # GAM-Dirichlet baseline: per-municipality delay-adjusted birth nowcast; fits the baseline models and stores per-cell predictions.
-# Reads input-data-processed/{births_new_mun,population_new_mun}.RDS -> writes input-data-processed/{municipality_models_all,nowcast_cell_predictions,municipality_models_summary}.RDS, output/ch4/.
+# Reads input-data-processed/{births_grouped_mun,population_grouped_mun}.RDS -> writes input-data-processed/{municipality_models_all,nowcast_cell_predictions,municipality_models_summary}.RDS, output/ch4/.
 # =============================================================================
 source("R/rates.R")
 
@@ -20,7 +20,7 @@ library(ggplot2)
 ################################################################################
 
 # Set working directory and load data
-births <- readRDS("input-data-processed/births_new_mun.RDS") |>
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") |>
   rename(event_year   = year,
          reg_year     = year_reg,
          municipality = group_id,
@@ -29,7 +29,7 @@ births <- readRDS("input-data-processed/births_new_mun.RDS") |>
   mutate(reg_year = as.numeric(reg_year),
          delay = reg_year - event_year)
 # Load population data
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") |>
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") |>
   rename(event_year   = year,
          municipality = group_id,
          age_group    = age) |>

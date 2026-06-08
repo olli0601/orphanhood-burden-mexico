@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_300_nowcast_correct.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Corrected standalone nowcast prototype.
-# Reads input-data-processed/{births_new_mun,population_new_mun}.RDS.
+# Reads input-data-processed/{births_grouped_mun,population_grouped_mun}.RDS.
 # =============================================================================
 
 # Load required packages
@@ -11,11 +11,11 @@ library(ggplot2)
 library(mgcv)
 library(VGAM)
 
-births <- readRDS("input-data-processed/births_new_mun.RDS") |>
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") |>
   rename(event_year = year, reg_year = year_reg, municipality = group_id, age_group = age, n = births) |>
   mutate(reg_year = as.numeric(reg_year))
 
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") |>
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") |>
   rename(event_year = year, municipality = group_id, age_group = age) |>
   filter(!age_group %in% c("00-04", "05-09", "10-14"))
 
@@ -297,7 +297,7 @@ library(yardstick)   # metrics
 library(parallel)
 
 ## ---- 0  Load & pre-clean the datasets ---------------------------------------
-births <- readRDS("input-data-processed/births_new_mun.RDS") |>
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") |>
   rename(event_year  = year,
          reg_year    = year_reg,
          municipality = group_id,
@@ -305,7 +305,7 @@ births <- readRDS("input-data-processed/births_new_mun.RDS") |>
          n            = births) |>
   mutate(reg_year = as.numeric(reg_year))
 
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") |>
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") |>
   rename(event_year = year,
          municipality = group_id,
          age_group    = age) |>

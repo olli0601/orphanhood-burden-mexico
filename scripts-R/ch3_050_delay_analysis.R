@@ -20,6 +20,9 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 library(sf)
+source("R/grouped_mun.R")
+
+fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
 ################################################################################
 
@@ -30,15 +33,11 @@ library(sf)
 deaths <- readRDS("input-data-processed/deaths.RDS")
 deaths <- deaths |>
   filter(!age %in% as.character(0:15))
-# GROUP BY THE NEW MUNICIPALITIES
-new_mun <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
-deaths_new_mun <- deaths |>
-  left_join(sf::st_drop_geometry(new_mun) |> dplyr::select(mun, group_id), by="mun") |>
-  group_by(group_id, year, year_reg, sex, age) |>
-  summarise(deaths = sum(deaths), .groups = "drop")
+# GROUP BY THE GROUPED MUNICIPALITIES (R/grouped_mun.R)
+deaths_grouped_mun <- aggregate_to_grouped_mun(deaths, "deaths")
 
 # CALCOLATE THE DELAY
-delay_df_mort <- deaths_new_mun |>
+delay_df_mort <- deaths_grouped_mun |>
   mutate(delay = as.numeric(year_reg)- as.numeric(year))
 
 
@@ -77,7 +76,7 @@ names(my_colors) <- delay_levels
 
 #---------- BARPLOT ------------
 ## Proportion -- DELAY IN THE FUTURE
-ggplot(deaths_prop_occ, aes(x = factor(year),
+p_deaths_delay_by_occurrence <- ggplot(deaths_prop_occ, aes(x = factor(year),
                             y = prop_deaths,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -86,21 +85,22 @@ ggplot(deaths_prop_occ, aes(x = factor(year),
   scale_fill_manual(values = my_colors) +
   labs(
     x = "Year of occurrence",
-    y = "Proportion of births",
+    y = "Proportion of deaths",
     fill = "Delay (year)",
-    title = "Reporting Delays for births by Year of Occurrence",
-    subtitle = "Each bar shows the proportion of births by how many years later they were registered"
+    title = "Reporting Delays for deaths by Year of Occurrence",
+    subtitle = "Each bar shows the proportion of deaths by how many years later they were registered"
   ) +
   theme_minimal() +
   theme(
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
+ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_occurrence.pdf"), p_deaths_delay_by_occurrence, width = 8, height = 6)
 
 
 
 ## Proportion -- DELAY IN THE PAST
-ggplot(deaths_prop_reg, aes(x = factor(year_reg),
+p_deaths_delay_by_registration <- ggplot(deaths_prop_reg, aes(x = factor(year_reg),
                             y = prop_deaths,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -119,6 +119,7 @@ ggplot(deaths_prop_reg, aes(x = factor(year_reg),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80")
   )
+ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_registration.pdf"), p_deaths_delay_by_registration, width = 8, height = 6)
 
 
 
@@ -145,29 +146,33 @@ delay_df_mort <- delay_df_mort |>
 
 
 # INTERACTION WITH SEX
-ggplot(delay_df_mort, aes(x = delay, fill = sex, weight = deaths)) +
+p_deaths_delay_by_sex <- ggplot(delay_df_mort, aes(x = delay, fill = sex, weight = deaths)) +
   geom_bar(position = "dodge") +
-  labs(title = "Delay Distribution by Sex", x = "Delay (days)", y = "Deaths") +
+  labs(title = "Delay Distribution by Sex", x = "Delay (years)", y = "Deaths") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_sex.pdf"), p_deaths_delay_by_sex, width = 8, height = 6)
 
 # INTERACTION WITH AGE
-ggplot(delay_df_mort, aes(x = delay, weight = deaths)) +
+p_deaths_delay_by_age <- ggplot(delay_df_mort, aes(x = delay, weight = deaths)) +
   geom_bar(fill = "#69b3a2") +
   facet_wrap(~ age) +
-  labs(title = "Delay Distribution by Age Group", x = "Delay (days)", y = "Deaths") +
+  labs(title = "Delay Distribution by Age Group", x = "Delay (years)", y = "Deaths") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_age.pdf"), p_deaths_delay_by_age, width = 8, height = 6)
 
 # INTERACTION WITH MPI
-ggplot(delay_df_mort, aes(x = as.numeric(IMN), y = delay)) +
+p_deaths_delay_vs_imn <- ggplot(delay_df_mort, aes(x = as.numeric(IMN), y = delay)) +
   geom_point(alpha = 0.4) +
   geom_smooth(method = "lm", color = "red", se = FALSE) +
-  labs(title = "Delay vs Marginalization Index", x = "MPI", y = "Delay (days)") +
+  labs(title = "Delay vs Marginalization Index", x = "MPI", y = "Delay (years)") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_deaths_delay_vs_imn.pdf"), p_deaths_delay_vs_imn, width = 8, height = 6)
 
-ggplot(delay_df_mort, aes(x = mpi_label, y = delay, weight = deaths)) +
+p_deaths_delay_by_mpi_category <- ggplot(delay_df_mort, aes(x = mpi_label, y = delay, weight = deaths)) +
   geom_boxplot() +
-  labs(title = "Delay by GM Category", x = "GM", y = "Delay (days)") +
+  labs(title = "Delay by GM Category", x = "GM", y = "Delay (years)") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_mpi_category.pdf"), p_deaths_delay_by_mpi_category, width = 8, height = 6)
 
 ################################################################################
 
@@ -179,15 +184,11 @@ ggplot(delay_df_mort, aes(x = mpi_label, y = delay, weight = deaths)) +
 # DATASET CONTAINING THE DEATHS PER YEAR, SEX, AGE AND MUNICIPALITY
 births <- readRDS("input-data-processed/births.RDS")
 
-# GROUP BY THE NEW MUNICIPALITIES
-new_mun <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
-births_new_mun <- births |>
-  left_join(sf::st_drop_geometry(new_mun) |> dplyr::select(mun, group_id), by="mun") |>
-  group_by(group_id, year, year_reg, sex, age) |>
-  summarise(births = sum(births), .groups = "drop")
+# GROUP BY THE GROUPED MUNICIPALITIES (R/grouped_mun.R)
+births_grouped_mun <- aggregate_to_grouped_mun(births, "births")
 
 # CALCOLATE THE DELAY
-delay_df <- births_new_mun |>
+delay_df <- births_grouped_mun |>
   mutate(delay = as.numeric(year_reg)- as.numeric(year))
 
 births_summary <- delay_df %>%
@@ -225,7 +226,7 @@ names(my_colors) <- delay_levels
 
 #---------- BARPLOT ------------
 ## Proportion -- DELAY IN THE FUTURE
-ggplot(births_prop_occ, aes(x = factor(year),
+p_births_delay_by_occurrence <- ggplot(births_prop_occ, aes(x = factor(year),
                             y = prop_births,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -244,11 +245,12 @@ ggplot(births_prop_occ, aes(x = factor(year),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
+ggsave(file.path(fig_dir, "ch3_050_births_delay_by_occurrence.pdf"), p_births_delay_by_occurrence, width = 8, height = 6)
 
 
 
 ## Proportion -- DELAY IN THE PAST
-ggplot(births_prop_reg, aes(x = factor(year_reg),
+p_births_delay_by_registration <- ggplot(births_prop_reg, aes(x = factor(year_reg),
                             y = prop_births,
                             fill = factor(delay))) +
   geom_bar(stat = "identity") +
@@ -267,6 +269,7 @@ ggplot(births_prop_reg, aes(x = factor(year_reg),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80")
   )
+ggsave(file.path(fig_dir, "ch3_050_births_delay_by_registration.pdf"), p_births_delay_by_registration, width = 8, height = 6)
 
 
 # JOIN WITH THE MPI
@@ -292,29 +295,33 @@ delay_df <- delay_df |>
 
 
 # INTERACTION WITH SEX
-ggplot(delay_df, aes(x = delay, fill = sex, weight = deaths)) +
+p_births_delay_by_sex <- ggplot(delay_df, aes(x = delay, fill = sex, weight = births)) +
   geom_bar(position = "dodge") +
-  labs(title = "Delay Distribution by Sex", x = "Delay (days)", y = "Deaths") +
+  labs(title = "Delay Distribution by Sex", x = "Delay (years)", y = "Births") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_births_delay_by_sex.pdf"), p_births_delay_by_sex, width = 8, height = 6)
 
 # INTERACTION WITH AGE
-ggplot(delay_df, aes(x = delay, weight = deaths)) +
+p_births_delay_by_age <- ggplot(delay_df, aes(x = delay, weight = births)) +
   geom_bar(fill = "#69b3a2") +
   facet_wrap(~ age) +
-  labs(title = "Delay Distribution by Age Group", x = "Delay (days)", y = "Deaths") +
+  labs(title = "Delay Distribution by Age Group", x = "Delay (years)", y = "Births") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_births_delay_by_age.pdf"), p_births_delay_by_age, width = 8, height = 6)
 
 # INTERACTION WITH MPI
-ggplot(delay_df, aes(x = IMN, y = delay, size = deaths)) +
+p_births_delay_vs_imn <- ggplot(delay_df, aes(x = as.numeric(IMN), y = delay, size = births)) +
   geom_point(alpha = 0.4) +
   geom_smooth(method = "lm", color = "red", se = FALSE) +
-  labs(title = "Delay vs Marginalization Index", x = "MPI", y = "Delay (days)") +
+  labs(title = "Delay vs Marginalization Index", x = "MPI", y = "Delay (years)") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_births_delay_vs_imn.pdf"), p_births_delay_vs_imn, width = 8, height = 6)
 
-ggplot(delay_df, aes(x = mpi_label, y = delay, weight = deaths)) +
+p_births_delay_by_mpi_category <- ggplot(delay_df, aes(x = mpi_label, y = delay, weight = births)) +
   geom_boxplot() +
-  labs(title = "Delay by GM Category", x = "GM", y = "Delay (days)") +
+  labs(title = "Delay by GM Category", x = "GM", y = "Delay (years)") +
   theme_minimal()
+ggsave(file.path(fig_dir, "ch3_050_births_delay_by_mpi_category.pdf"), p_births_delay_by_mpi_category, width = 8, height = 6)
 
 
 

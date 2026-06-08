@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_250_gam_archivio3_nowcast_baseline.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Archived patched baseline (with line-based credible intervals); kept for reproducibility.
-# Reads input-data-processed/{births_new_mun,population_new_mun}.RDS -> models/predictions, output/ch4/.
+# Reads input-data-processed/{births_grouped_mun,population_grouped_mun}.RDS -> models/predictions, output/ch4/.
 # =============================================================================
 source("R/rates.R")
 
@@ -20,7 +20,7 @@ library(ggplot2)
 ################################################################################
 
 # Set working directory and load data
-births <- readRDS("input-data-processed/births_new_mun.RDS") |>
+births <- readRDS("input-data-processed/births_grouped_mun.RDS") |>
   rename(event_year   = year,
          reg_year     = year_reg,
          municipality = group_id,
@@ -29,7 +29,7 @@ births <- readRDS("input-data-processed/births_new_mun.RDS") |>
   mutate(reg_year = as.numeric(reg_year),
          delay = reg_year - event_year)
 # Load population data
-pop_tbl <- readRDS("input-data-processed/population_new_mun.RDS") |>
+pop_tbl <- readRDS("input-data-processed/population_grouped_mun.RDS") |>
   rename(event_year   = year,
          municipality = group_id,
          age_group    = age) |>

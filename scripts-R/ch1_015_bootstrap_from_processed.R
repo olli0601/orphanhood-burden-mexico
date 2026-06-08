@@ -1,5 +1,5 @@
 # =============================================================================
-# ch1_005_bootstrap_from_processed.R  ·  Chapter 1 — Bootstrap from processed data
+# ch1_015_bootstrap_from_processed.R  ·  Chapter 1 — Bootstrap from processed data
 # Build the deterministic intermediates needed to start the pipeline from the
 # SUPPLIED per-year datasets (input-data-processed/{fertility,mortality}
 # datasets/) instead of the raw INEGI files. Produces the inputs that

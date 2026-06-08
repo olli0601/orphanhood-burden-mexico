@@ -1,7 +1,7 @@
 # =============================================================================
 # ch5_040_orphans_long_CORRECT.R  ·  Chapter 5 — Orphanhood estimation
 # Definitive long-format orphanhood pipeline: incidence + lifetime prevalence by child-age and parent-sex, plus spatial correlation (Moran's I / LISA).
-# Reads input-data-processed/{geo_info*,population_new_mun,birth_data_all,deaths*,mort_df,births_long,fertility_df,survival_df,aggregated_muni_50000,index_new_mun,grouped_municipality_50000}.RDS -> input-data-processed/{fertility_df,survival_df}.RDS, output/ch5/.
+# Reads input-data-processed/{geo_info*,population_grouped_mun,birth_data_all,deaths*,mort_df,births_long,fertility_df,survival_df,aggregated_muni_50000,index_grouped_mun,grouped_municipality_50000}.RDS -> input-data-processed/{fertility_df,survival_df}.RDS, output/ch5/.
 # =============================================================================
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ source("R/rates.R")
 g <- "input-data-processed/"
 
 geo_info      <- readRDS(paste0(g, "geo_info.RDS"))
-population_df <- readRDS(paste0(g, "population_new_mun.RDS"))
+population_df <- readRDS(paste0(g, "population_grouped_mun.RDS"))
 fr_raw        <- readRDS(paste0(g, "birth_data_all.RDS"))
 deaths_raw    <- readRDS(paste0(g, "deaths.RDS"))
 mort_df       <- readRDS(paste0(g, "mort_df.RDS"))
@@ -789,7 +789,7 @@ print(rate_map)
 # ──────────────────────────────────────────────────────────────
 #  MPI MAP
 # ──────────────────────────────────────────────────────────────
-mpi <- readRDS("input-data-processed/index_new_mun.RDS")
+mpi <- readRDS("input-data-processed/index_grouped_mun.RDS")
 mpi <- mpi |> 
   filter(year == 2020) |>
   left_join(
@@ -843,15 +843,15 @@ fert_df_year <- fertility_df |>
   rename(fert_rate = fertility_rate) |>
   filter(year>= 2010)
 
-geo_info_new_mun <- readRDS("input-data-processed/geo_info_new_mun.RDS")
-geo_info_new_mun <- st_drop_geometry(geo_info_new_mun)
+geo_info_grouped_mun <- readRDS("input-data-processed/geo_info_grouped_mun.RDS")
+geo_info_grouped_mun <- st_drop_geometry(geo_info_grouped_mun)
 mpi <- st_drop_geometry(mpi) |>
   select(group_id, year, IMN) |>
   distinct()
 
 std_raw <- compute_std_fert_rate(fert_df_year);
 std_raw_year <- std_raw %>% 
-  left_join(y = geo_info_new_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
+  left_join(y = geo_info_grouped_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
   left_join(y = mpi, by = c("group_id", "year")) %>% 
   mutate(
     capital = as.character(capital),
@@ -895,7 +895,7 @@ library(ggplot2)
 library(viridis)
 library(scales)
 
-# ❶  Join geometry (assuming `new_mun_50000` is your muni shapefile)
+# ❶  Join geometry (assuming `grouped_mun_50000` is your muni shapefile)
 std_raw_map <- std_raw |>
   filter(year==2023) |>
   group_by(group_id) |>
@@ -941,7 +941,7 @@ fert_map <- ggplot(fert_map) +
 # ──────────────────────────────────────────────────────────────
 #  Lineplot standardized mortality rate in 2023
 # ──────────────────────────────────────────────────────────────
-deaths <- readRDS("input-data-processed/deaths_new_mun.RDS")
+deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS")
 to_exclude <- c(as.character(1:15), "80-84")
 
 deaths <- deaths[!deaths$age %in% to_exclude, ]
@@ -957,7 +957,7 @@ mort_df_year <- deaths |>
 std_raw_mort <- compute_std_mort_rate(mort_df_year);
 
 std_raw_mort_year <- std_raw_mort %>% 
-  left_join(y = geo_info_new_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
+  left_join(y = geo_info_grouped_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
   left_join(y = mpi, by = c("group_id", "year")) %>% 
   mutate(
     capital = as.character(capital),
