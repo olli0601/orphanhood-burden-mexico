@@ -1,7 +1,7 @@
 # =============================================================================
 # ch4_290_nowcast.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Standalone nowcast exploration (early prototype).
-# Reads input-data-processed/fert.RDS.
+# Reads input-data-processed/fert_by_grouped_mun.RDS.
 # =============================================================================
 
 # Load libraries
@@ -13,7 +13,7 @@ library(nimble)
 library(scales)
 
 # Set working directory and load data
-births_df <- readRDS("input-data-processed/fert.RDS") |> filter(year >= 1990)
+births_df <- readRDS("input-data-processed/fert_by_grouped_mun.RDS") |> filter(year >= 1990)
 
 # Standardize factors
 births_df <- births_df |>

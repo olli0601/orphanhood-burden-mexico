@@ -1,11 +1,15 @@
 # =============================================================================
-# ch3_020_clean_fertility.R  ·  Chapter 3 — Fertility at new-municipality level
-# Re-express births on the aggregated municipalities and merge with population,
-# geography and marginalization to produce the analysis-ready fertility table.
+# ch3_020_clean_fertility_by_grouped_mun.R  ·  Chapter 3 — Fertility by grouped municipality
+# Re-express births on the AGGREGATED (grouped) municipalities and merge with the
+# grouped population, geography and marginalization to produce the analysis-ready
+# fertility table at grouped-municipality level. Grouped counterpart of
+# ch1_050_clean_fert.R (original-municipality level); the two write different files
+# (fert_by_grouped_mun.RDS vs fert.RDS).
 #
 # Reads : input-data-processed/{births, grouped_municipality_*, geo_info*,
 #         population*, index_marg}.RDS
-# Writes: input-data-processed/fert.RDS
+# Writes: input-data-processed/fert_by_grouped_mun.RDS
+#         output/ch3/ch3_020_by_grouped_mun_*.pdf
 # Run after: ch1_060, ch2_010
 # =============================================================================
 
@@ -75,7 +79,7 @@ p_births_total_by_reg_year <- ggplot(births_summary, aes(x = factor(year_reg), y
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
-ggsave(file.path(fig_dir, "ch3_020_births_total_by_reg_year.pdf"), p_births_total_by_reg_year, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_births_total_by_reg_year.pdf"), p_births_total_by_reg_year, width = 8, height = 6)
 
 ## Proportion -- DELAY IN THE FUTURE
 p_births_prop_by_occ_year <- ggplot(births_prop_occ, aes(x = factor(year),
@@ -97,7 +101,7 @@ p_births_prop_by_occ_year <- ggplot(births_prop_occ, aes(x = factor(year),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80", size = 0.3)
   )
-ggsave(file.path(fig_dir, "ch3_020_births_prop_by_occ_year.pdf"), p_births_prop_by_occ_year, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_births_prop_by_occ_year.pdf"), p_births_prop_by_occ_year, width = 8, height = 6)
 
 
 
@@ -121,7 +125,7 @@ p_births_prop_by_reg_year <- ggplot(births_prop_reg, aes(x = factor(year_reg),
     axis.text.x = element_text(angle = 90, vjust = 0.5),
     panel.grid.major.y = element_line(color = "gray80")
   )
-ggsave(file.path(fig_dir, "ch3_020_births_prop_by_reg_year.pdf"), p_births_prop_by_reg_year, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_births_prop_by_reg_year.pdf"), p_births_prop_by_reg_year, width = 8, height = 6)
 
 
 ################################################################################
@@ -170,7 +174,7 @@ fert %>%
 fert<- fert %>%
   add_delay(bucket = FALSE)
 
-saveRDS(fert, file = "input-data-processed/fert.RDS")
+saveRDS(fert, file = "input-data-processed/fert_by_grouped_mun.RDS")
 
 
 ################################################################################
@@ -197,7 +201,7 @@ std_raw$mpi <- as.numeric(std_raw$mpi)
 # ---------------------Plot mortality rate against mpi -------------------------
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (fertility)")
 print(p_raw_pts)
-ggsave(file.path(fig_dir, "ch3_020_std_fert_rate_vs_mpi.pdf"), p_raw_pts, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_std_fert_rate_vs_mpi.pdf"), p_raw_pts, width = 8, height = 6)
 
 
 ################################################################################
@@ -205,7 +209,7 @@ ggsave(file.path(fig_dir, "ch3_020_std_fert_rate_vs_mpi.pdf"), p_raw_pts, width 
 #------------------------- National mortality rate -----------------------------
 
 ################################################################################
-fert <- readRDS("input-data-processed/fert.RDS")
+fert <- readRDS("input-data-processed/fert_by_grouped_mun.RDS")
 fert$year <- as.character(fert$year)
 fert <- fert |>
   tidyr::unnest(cols = c(tot_births, population))
@@ -252,7 +256,7 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
-ggsave(file.path(fig_dir, "ch3_020_std_fert_rate_by_age_sex_year.pdf"), p, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_std_fert_rate_by_age_sex_year.pdf"), p, width = 12, height = 8)
 
 
 std_age_sex <- std_age_sex %>% filter(year == 2023)
@@ -265,7 +269,7 @@ p_std_fert_2023_by_sex <- ggplot(std_age_sex, aes(x = age, y = std_rate, color =
        x = "Age Group",
        y = "Standardized Mortality Rate") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_020_std_fert_2023_by_sex.pdf"), p_std_fert_2023_by_sex, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_std_fert_2023_by_sex.pdf"), p_std_fert_2023_by_sex, width = 8, height = 6)
 
 
 #-------------------------------------------------------------------------------
@@ -328,7 +332,7 @@ p_fert_trends_by_quintile <- ggplot(df_summary, aes(x = year, y = fertility_rate
     y = "Average Fertility Rate",
     color = "Poverty Quintile"
   )
-ggsave(file.path(fig_dir, "ch3_020_fert_trends_by_quintile.pdf"), p_fert_trends_by_quintile, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_fert_trends_by_quintile.pdf"), p_fert_trends_by_quintile, width = 8, height = 6)
 
 df_fert_std <- compute_std_fert_rate(df_fert)
 df_fert_std <- left_join(df_fert_std, dplyr::mutate(index_marg, year = as.character(year)), by=c("group_id", "year"))
@@ -356,7 +360,7 @@ p_std_fert_trends_by_quintile <- ggplot(df_fert_std, aes(x = year, y = std_fert_
     y = "Average Standardized Fertility Rate",
     color = "Poverty Quintile"
   )
-ggsave(file.path(fig_dir, "ch3_020_std_fert_trends_by_quintile.pdf"), p_std_fert_trends_by_quintile, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch3_020_by_grouped_mun_std_fert_trends_by_quintile.pdf"), p_std_fert_trends_by_quintile, width = 8, height = 6)
 
 
 

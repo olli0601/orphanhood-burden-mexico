@@ -14,7 +14,7 @@ library(readr)
 # fertility: year, age, sex, fertility_rate
 
 deaths_df <- readRDS("input-data-processed/mort_by_grouped_mun.RDS")        # age: 15-94
-fertility_df <- readRDS("input-data-processed/fert.RDS")
+fertility_df <- readRDS("input-data-processed/fert_by_grouped_mun.RDS")
 
 # --- 2. Define Parameters ---
 max_child_age <- 17

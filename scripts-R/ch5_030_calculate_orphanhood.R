@@ -60,7 +60,7 @@ population_df_long <- population_df |>
 
 #------------------------- FERTILITY DATASET ------------------------------
 # ---------- PER AGE BAND GROUP
-fr_df <- readRDS("input-data-processed/fert.RDS") |> 
+fr_df <- readRDS("input-data-processed/fert_by_grouped_mun.RDS") |> 
   filter(year >= 1990) |>
   select(group_id, year, sex, age, tot_births)
 

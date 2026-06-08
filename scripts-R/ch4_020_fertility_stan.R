@@ -13,7 +13,7 @@ source("R/aux.R")
 
 data <- readRDS(file = "input-data-processed/fertility_bias_data.RDS")
 
-fert      <- readRDS(file = "input-data-processed/fert.RDS")
+fert      <- readRDS(file = "input-data-processed/fert_by_grouped_mun.RDS")
 geo_info  <- readRDS(file = "input-data-processed/geo_info.RDS")
 
 # National fertility

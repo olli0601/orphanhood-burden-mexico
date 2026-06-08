@@ -19,6 +19,11 @@ cmake = "*"
 # System libraries for spatial/geometry packages (sf, spdep, tmap)
 udunits2 = "*"
 
+# Archive tool — the manual raw inputs are stored as .tar.zst. zstd provides the
+# cross-platform CLI (Linux/macOS/Windows) used by the extraction script
+# (scripts-R/ch1_011_extract_raw_archives.R): zstd -d  +  R's built-in untar().
+zstd = "*"
+
 # CmdStan (cmdstanr is installed separately from R-universe — see tasks)
 cmdstan = "==2.37.0"
 

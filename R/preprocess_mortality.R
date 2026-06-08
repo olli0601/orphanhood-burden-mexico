@@ -54,36 +54,49 @@ preprocess_mortality <- function(file) {
       mun   = paste0(state, mun)
     )
   
-  # 5. Filter and reformat age
-  # Keep parental ages only: females 15-64, males 15-84 (EDAD coded 40xx = years).
+  # 5. Decode age. INEGI EDAD coding: 1000-3999 = infant ages in hours/days/months
+  #    (i.e. age 0, a KNOWN age); 4000-4120 = age in completed years (4015 = 15 yr);
+  #    4998 / 4999 = "age unknown" sentinels. Decode the year-coded values; leave
+  #    everything else NA for now.
+  unknown_codes <- c(4998, 4999)
+  is_unknown <- df$age %in% unknown_codes
   df <- df |>
-    filter(
-      (sex == "female" & age >= 4015 & age <= 4064) |
-        (sex == "male"   & age >= 4015 & age <= 4084)
-    ) |>
-    mutate(age = as.numeric(age %% 100))
+    mutate(age_years = ifelse(age >= 4000 & age <= 4120, as.integer(age - 4000L), NA_integer_))
 
-  # 6. Five-year age groups, 15-19 ... ; age 15 folds into 15-19 (matches the
-  #    supplied mort_YYYY data — verified bit-for-bit for adult bands).
+  # 6. Five-year parental age bands (females 15-64, males 15-84; age 15 folds into
+  #    15-19). NA / non-parental ages are handled EXPLICITLY, in two distinct cases:
+  #      - genuinely UNKNOWN age (EDAD 4998/4999) -> kept as age = NA, so unknown-age
+  #        deaths are not silently lost; they carry no usable age, so the downstream
+  #        rate steps drop them when joining on age band.
+  #      - a KNOWN age outside the parental range (infants <1, ages 0-14, females
+  #        65+, males 85+) -> dropped, as outside the scope of parental mortality.
   df <- df |>
     mutate(age = case_when(
-      sex == "female" & age >= 15 & age <= 64 ~ paste0(
-        15 + 5 * floor((age - 15) / 5), "-",
-        19 + 5 * floor((age - 15) / 5)
+      sex == "female" & age_years >= 15 & age_years <= 64 ~ paste0(
+        15 + 5 * floor((age_years - 15) / 5), "-",
+        19 + 5 * floor((age_years - 15) / 5)
       ),
-      sex == "male" & age >= 15 & age <= 84 ~ paste0(
-        15 + 5 * floor((age - 15) / 5), "-",
-        19 + 5 * floor((age - 15) / 5)
+      sex == "male" & age_years >= 15 & age_years <= 84 ~ paste0(
+        15 + 5 * floor((age_years - 15) / 5), "-",
+        19 + 5 * floor((age_years - 15) / 5)
       ),
-      TRUE ~ NA_character_
+      age %in% unknown_codes ~ NA_character_,  # unknown age -> explicit NA bucket
+      TRUE                   ~ "OUT_OF_RANGE"   # known age, outside parental range
     ))
-  
-  
-  # 7. Combine female and male datasets, convert variables to factors and aggregate
+
+  n_unknown <- sum(is_unknown)
+  n_out     <- sum(df$age == "OUT_OF_RANGE", na.rm = TRUE)
+  message(sprintf(
+    "preprocess_mortality: %d deaths with unknown age (EDAD 4998/4999) kept as age = NA; %d known out-of-parental-range deaths dropped.",
+    n_unknown, n_out))
+
+  # 7. Drop the out-of-range deaths (keep parental bands + the unknown-age NA
+  #    bucket), then aggregate.
   df_final <- df |>
+    filter(is.na(age) | age != "OUT_OF_RANGE") |>
     group_by(year, sex, age, mun) |>
     summarise(deaths = n(), .groups = "drop")
-  
+
   return(df_final)
 }
 

@@ -14,11 +14,13 @@ correct_year <- function(df){
 #-------------------------------------------------------------------------------
 
 preprocess_fertility <- function(file) {
-  # Extract year from the filename
+  # Year from the filename, used ONLY to pick the 2017 CSV's ';' delimiter.
+  # Pre-2017 raw DBFs have 2-digit names (e.g. NACIM90.dbf) so this is NA — that
+  # is fine: they fall through to the DBF branch and take `year` from the data.
   year <- str_extract(basename(file), "[0-9]{4}")
-  
+
   # Read the file with appropriate delimiter depending on the year
-  if (year == "2017") {
+  if (!is.na(year) && year == "2017") {
     # 1. Read 2017 file with ';' delimiter
     df <- read_delim(
       file,
@@ -96,7 +98,7 @@ preprocess_fertility <- function(file) {
 preprocess_fertility_long <- function(file) {
   year <- str_extract(basename(file), "[0-9]{4}")
   
-  if (year == "2017") {
+  if (!is.na(year) && year == "2017") {
     df <- read_delim(
       file,
       delim = ";",
@@ -160,7 +162,7 @@ preprocess_fertility_day <- function(file) {
   ## --- 0. identify year & import ------------------------------------------------
   year <- stringr::str_extract(basename(file), "[0-9]{4}")
   
-  if (year == "2017") {
+  if (!is.na(year) && year == "2017") {
     df <- readr::read_delim(file, delim = ";", escape_double = FALSE, trim_ws = TRUE)
   } else {
     ext <- tools::file_ext(file)

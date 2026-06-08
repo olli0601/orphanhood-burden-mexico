@@ -1,7 +1,9 @@
 # =============================================================================
-# ch1_050_clean_fert.R  ·  Chapter 1 — Fertility cleaning
+# ch1_050_clean_fert.R  ·  Chapter 1 — Fertility cleaning (original municipalities)
 # Clean and harmonise the per-year INEGI registered-birth files into birth
-# counts by municipality x parent-sex x 5-year age group x year.
+# counts by municipality x parent-sex x 5-year age group x year. Works at
+# ORIGINAL-municipality level and writes fert.RDS. The grouped-municipality
+# counterpart is ch3_020_clean_fertility_by_grouped_mun.R (fert_by_grouped_mun.RDS).
 #
 # Loads the supplied per-year fertility (input-data-processed/fertility datasets/),
 # joins population + IMM_2020 + geo_info.

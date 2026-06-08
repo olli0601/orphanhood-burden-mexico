@@ -1,5 +1,16 @@
-# Raw input data (large, downloaded via R/get_input_data_raw.R — not version controlled)
-input-data-raw/
+# Raw inputs. Auto-downloadable sources (fetched by scripts-R/ch1_010) are NOT
+# tracked. The request-gated MANUAL files that cannot be re-sourced — pre-2017
+# registered births + ALL registered deaths — are intentionally left tracked so
+# they are not lost.
+#   WARNING: some are very large (>100 MB; e.g. the deaths bundles). Plain GitHub
+#   rejects files >100 MB — use Git LFS or a non-GitHub remote before committing
+#   these (see README). Nothing here is auto-committed.
+input-data-raw/population/
+input-data-raw/marginalization/
+input-data-raw/geometries/
+input-data-raw/births/natalidad_*/
+input-data-raw/births/*201[789]*
+input-data-raw/births/*202[0-4]*
 
 # OS cruft
 .DS_Store
@@ -20,9 +31,8 @@ __pycache__/
 .pixi/
 pixi.lock
 
-# Processed datasets (per-year panels + derived intermediates) — large, not
-# version controlled. Mirror copies via the Dropbox links in README (# Data).
-input-data-processed/**/*.RDS
-input-data-processed/*.RDS
-input-data-processed/**/*.rds
-input-data-processed/*.rds
+# Processed data: ignore ALL contents (regenerable by the pipeline, or supplied
+# via the Dropbox mirror in README), but keep the directory itself in the repo
+# via a tracked .gitkeep.
+input-data-processed/*
+!input-data-processed/.gitkeep
