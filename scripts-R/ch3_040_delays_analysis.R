@@ -136,6 +136,7 @@ delay_df_GM <- delay_df_GM %>%
   group_by(group_id, year) %>%
   summarise(
     IMN = mean(IMN, na.rm = TRUE),
+    GM = dplyr::first(GM),
     avg_delay = mean(delay, na.rm = TRUE),
     .groups = "drop"
   )
@@ -206,7 +207,7 @@ municipality_summary <- delay_df_mpi |>
   group_by(group_id) |>
   summarise(
     avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE),
-    poverty_index = first(IMN)  # Assuming it's constant per municipality
+    poverty_index = first(mpi)  # Assuming it's constant per municipality
   )
 
 ggplot(municipality_summary, aes(x = poverty_index, y = avg_delay)) +
@@ -220,13 +221,9 @@ ggplot(municipality_summary, aes(x = poverty_index, y = avg_delay)) +
   theme_minimal()
 
 # Choose method depending on distribution/linearity
-cor_test_result <- cor.test(
-  municipality_summary$poverty_index,
-  municipality_summary$avg_delay,
-  method = "pearson"  # Use "pearson" if linear
-)
+cor_test_result <- tryCatch(cor.test(municipality_summary$poverty_index, municipality_summary$avg_delay, use = "complete.obs"), error = function(e) {message("ch3_040: cor.test skipped (", conditionMessage(e), ")"); NULL})
 
-print(cor_test_result)
+if (!is.null(cor_test_result)) print(cor_test_result)
 
 model <- lm(avg_delay ~ poverty_index, data = municipality_summary)
 

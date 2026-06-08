@@ -33,7 +33,7 @@ deaths <- deaths |>
 # GROUP BY THE NEW MUNICIPALITIES
 new_mun <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
 deaths_new_mun <- deaths |>
-  left_join(new_mun |> dplyr::select(mun, group_id), by="mun") |>
+  left_join(sf::st_drop_geometry(new_mun) |> dplyr::select(mun, group_id), by="mun") |>
   group_by(group_id, year, year_reg, sex, age) |>
   summarise(deaths = sum(deaths), .groups = "drop")
 
@@ -182,7 +182,7 @@ births <- readRDS("input-data-processed/births.RDS")
 # GROUP BY THE NEW MUNICIPALITIES
 new_mun <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
 births_new_mun <- births |>
-  left_join(new_mun |> dplyr::select(mun, group_id), by="mun") |>
+  left_join(sf::st_drop_geometry(new_mun) |> dplyr::select(mun, group_id), by="mun") |>
   group_by(group_id, year, year_reg, sex, age) |>
   summarise(births = sum(births), .groups = "drop")
 

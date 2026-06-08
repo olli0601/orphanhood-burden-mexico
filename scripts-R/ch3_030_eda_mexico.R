@@ -27,14 +27,19 @@ source("R/rates.R")  # Adjust path if needed
 
 # --- 2. Load datasets ---
 # Adjust file paths if needed
-births <- read_parquet("input-data-processed/births_new_mun.parquet")
-deaths <- read_parquet("input-data-processed/deaths_new_mun.parquet") |>
+births <- readRDS("input-data-processed/births_new_mun.RDS")
+deaths <- readRDS("input-data-processed/deaths_new_mun.RDS") |>
   filter(!age %in% 1:15)
-population <- read_parquet("input-data-processed/population_new_mun.parquet")|>
+population <- readRDS("input-data-processed/population_new_mun.RDS")|>
   filter(!age %in% c("00-04", "05-09", "10-14"))
-marg_index <- read_parquet("input-data-processed/marg_index.parquet")
+marg_index <- readRDS("input-data-processed/marg_index.RDS")
 # Note: 'rural_urban_area.parquet copia' may need renaming or path adjustment
-rural_urban <- read_parquet("input-data-processed/rural_urban_area.parquet")
+rural_urban <- if (file.exists("input-data-processed/rural_urban_area.parquet")) {
+  read_parquet("input-data-processed/rural_urban_area.parquet")
+} else {
+  message("ch3_030: rural_urban_area.parquet missing (needs raw type_of_mun.csv); using NA area_type stub.")
+  data.frame(group_id = unique(marg_index$group_id), area_type = "Unknown")
+}
 
 #-------------------------------------------------------------------------------
 #------------------------------------FERTILITY----------------------------------
@@ -219,17 +224,20 @@ ggplot(filter(fertility, !is.na(fert_rate) & !is.na(area_type)), aes(x = fert_ra
 
 # --- 6b. Plot standardised fertility rates (municipal and national) ---
 
-# Sample 12 random group_id for visualization
-set.seed(123) # For reproducibility
-sampled_ids <- sample(unique(std_fert_mun$group_id), 12)
-std_fert_mun_sample <- std_fert_mun %>% filter(group_id %in% sampled_ids)
+if (exists("std_fert_mun")) {
+  # Sample 12 random group_id for visualization
+  set.seed(123) # For reproducibility
+  sampled_ids <- sample(unique(std_fert_mun$group_id), 12)
+  std_fert_mun_sample <- std_fert_mun %>% filter(group_id %in% sampled_ids)
+  
+  ggplot(std_fert_mun_sample, aes(x = year, y = std_rate, color = sex)) +
+    geom_line() +
+    facet_wrap(~ group_id) +
+    labs(title = "Standardised Fertility Rate by Municipality (sampled)",
+         x = "Year", y = "Standardised Fertility Rate")
+} else message("ch3_030: skipping per-municipality std-fertility plot (std_fert_mun not built).")
 
-ggplot(std_fert_mun_sample, aes(x = year, y = std_rate, color = sex)) +
-  geom_line() +
-  facet_wrap(~ group_id) +
-  labs(title = "Standardised Fertility Rate by Municipality (sampled)",
-       x = "Year", y = "Standardised Fertility Rate")
-
+std_fert_nat <- std_nat  # national fertility std (alias)
 ggplot(std_fert_nat, aes(x = year, y = std_rate, color = sex)) +
   geom_line() +
   labs(title = "National Standardised Fertility Rate",
@@ -288,3 +296,5 @@ cat("- Urban/rural differences are evident in both fertility and mortality.\n")
 cat("- Further analysis by age, cause of death, or other variables is recommended.\n")
 
 # --- End of EDA script ---
+
+

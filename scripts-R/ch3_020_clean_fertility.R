@@ -20,7 +20,7 @@ library(gridExtra)
 library(foreign)
 library(Polychrome)
 library(sf)
-source("R/rates.R"); source("R/plots.R")
+source("R/rates.R"); source("R/plots.R"); source("R/load_year_panels.R")
 ################################################################################
 
 #---------------------------- SHOW DELAY REPORTING ----------------------------
@@ -32,11 +32,7 @@ births <- readRDS("input-data-processed/births.RDS")
 births_summary <- births %>%
   group_by(year, year_reg) %>%
   summarise(total_births = n(), .groups = "drop") %>%
-  mutate(
-    delay = as.numeric(year_reg) - as.numeric(year),
-    delay = ifelse(delay > 8, "8+", as.character(delay)),
-    delay = factor(delay, levels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "8+"))
-  )
+  add_delay(max_delay = 8)
 
 
 births_prop_reg <- births_summary %>%
@@ -178,7 +174,7 @@ fert %>%
 
 
 fert<- fert %>%
-  mutate(delay = as.numeric(year_reg)- as.numeric(year))
+  add_delay(bucket = FALSE)
 
 saveRDS(fert, file = "input-data-processed/fert.RDS")
 

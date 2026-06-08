@@ -126,11 +126,7 @@ deaths <- deaths |>
 deaths_summary <- deaths %>%
   group_by(year, year_reg) %>%
   summarise(total_deaths = n(), .groups = "drop") %>%
-  mutate(
-    delay = as.numeric(year_reg) - as.numeric(year),
-    delay = ifelse(delay > 5, "5+", as.character(delay)),
-    delay = factor(delay, levels = c("0", "1", "2", "3", "4", "5", "5+"))
-  )
+  add_delay(max_delay = 5)
 
 
 deaths_prop_reg <- deaths_summary %>%
