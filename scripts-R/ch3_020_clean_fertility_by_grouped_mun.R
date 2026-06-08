@@ -3,14 +3,14 @@
 # Re-express births on the AGGREGATED (grouped) municipalities and merge with the
 # grouped population, geography and marginalization to produce the analysis-ready
 # fertility table at grouped-municipality level. Grouped counterpart of
-# ch1_050_clean_fert.R (original-municipality level); the two write different files
+# ch2_050_clean_fert.R (original-municipality level); the two write different files
 # (fert_by_grouped_mun.RDS vs fert.RDS).
 #
 # Reads : input-data-processed/{births, grouped_municipality_*, geo_info*,
 #         population*, index_marg}.RDS
 # Writes: input-data-processed/fert_by_grouped_mun.RDS
 #         output/ch3/ch3_020_by_grouped_mun_*.pdf
-# Run after: ch1_060, ch2_010
+# Run after: ch2_060, ch2_010
 # =============================================================================
 
 library(dplyr)

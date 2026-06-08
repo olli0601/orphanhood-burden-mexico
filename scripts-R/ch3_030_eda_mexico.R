@@ -6,7 +6,7 @@
 # Reads : input-data-processed/{births_grouped_mun, deaths_grouped_mun, population_grouped_mun,
 #         marg_index, rural_urban_area}.parquet
 # Writes: output/ch3/ (EDA figures)
-# Run after: ch1_060
+# Run after: ch2_060
 # =============================================================================
 
 # Exploratory Data Analysis (EDA) on Fertility and Mortality in Mexico
@@ -35,7 +35,7 @@ deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS") |>
 population <- readRDS("input-data-processed/population_grouped_mun.RDS")|>
   filter(!age %in% c("00-04", "05-09", "10-14"))
 marg_index <- readRDS("input-data-processed/marg_index.RDS")
-# Urban/rural per grouped municipality (built in ch1_060 from IMM small_towns_pct).
+# Urban/rural per grouped municipality (built in ch2_060 from IMM small_towns_pct).
 rural_urban <- readRDS("input-data-processed/rural_urban_area.RDS") |>
   dplyr::select(group_id, area_type)
 

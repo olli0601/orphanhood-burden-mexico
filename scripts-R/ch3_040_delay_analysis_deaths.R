@@ -1,12 +1,12 @@
 # =============================================================================
-# ch3_040_delays_analysis.R  ·  Chapter 3 — Registration-delay structure
-# Characterise birth/death reporting delays (delay distributions, cumulative
+# ch3_040_delay_analysis_deaths.R  ·  Chapter 3 — Death registration-delay structure
+# Characterise DEATH reporting delays (delay distributions, cumulative
 # registration curves) and how they vary by marginalization and area type.
 #
 # Reads : input-data-processed/{deaths, grouped_municipality_50000,
 #         aggregated_muni_50000, mpi_imputed, index_grouped_mun}.RDS
 # Writes: output/ch3/ (delay figures)
-# Run after: ch1_060, ch2_010
+# Run after: ch2_060, ch2_010
 # =============================================================================
 
 library(dplyr)

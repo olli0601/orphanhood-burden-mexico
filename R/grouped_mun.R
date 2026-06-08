@@ -4,7 +4,7 @@
 # (grouped_municipality_50000.RDS) is an sf object, so its geometry is dropped
 # here to keep the result non-spatial (sf summarise() would otherwise misbehave).
 # Replaces the join + group_by/summarise blocks duplicated across
-# ch1_040 / ch3_010 / ch3_020 / ch3_050.
+# ch2_040 / ch3_010 / ch3_020 / ch3_050.
 # =============================================================================
 
 # Attach the grouped-municipality id (group_id) to a mun-level table by joining

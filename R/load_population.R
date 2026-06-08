@@ -1,7 +1,7 @@
 # load_population.R
 # Read + reshape the CONAPO municipal population workbook to long format
 # (mun x sex x 5-year age group x year, 1990-2023). Single source for the block
-# that was previously duplicated across ch1_005 / ch1_040 / ch1_060.
+# that was previously duplicated across ch1_005 / ch2_040 / ch2_060.
 #   keep_child = FALSE  drop the 0-4 and 5-9 bands (adult panels: fertility/mortality)
 #   keep_child = TRUE   retain them (needed for child survival in Chapter 5)
 # =============================================================================

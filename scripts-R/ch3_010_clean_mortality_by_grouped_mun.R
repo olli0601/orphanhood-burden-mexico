@@ -3,7 +3,7 @@
 # Re-express deaths on the AGGREGATED (grouped) municipalities and merge with the
 # grouped population, geography and (interpolated) marginalization to produce the
 # analysis-ready mortality table at grouped-municipality level. This is the
-# grouped counterpart of ch1_040_clean_mort.R (which stays at original-municipality
+# grouped counterpart of ch2_040_clean_mort.R (which stays at original-municipality
 # level); the two intentionally write different files (mort_by_grouped_mun.RDS vs
 # mort.RDS).
 #
@@ -11,7 +11,7 @@
 #         population*, marg_index}.RDS
 # Writes: input-data-processed/{deaths_grouped_mun, mort_by_grouped_mun}.RDS
 #         output/ch3/ch3_010_by_grouped_mun_*.pdf
-# Run after: ch1_060, ch2_010
+# Run after: ch2_060, ch2_010
 # =============================================================================
 
 library(dplyr)

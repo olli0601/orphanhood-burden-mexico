@@ -4,7 +4,7 @@
 # adding `year_reg` (from the filename) and correcting the 2-digit occurrence
 # year stored in the early files (1985-1997: 90 -> 1990, drops the 99 sentinel,
 # via correct_year()). Replaces the duplicated load loop + mget()/correct_year()
-# pattern in ch1_040 / ch1_050 / ch1_060.
+# pattern in ch2_040 / ch2_050 / ch2_060.
 # =============================================================================
 load_year_panels <- function(subdir, dir = "input-data-processed",
                              correct_years = 1985:1997) {

@@ -1,5 +1,5 @@
 # =============================================================================
-# ch1_050_clean_fert.R  ·  Chapter 1 — Fertility cleaning (original municipalities)
+# ch2_050_clean_fert.R  ·  Chapter 1 — Fertility cleaning (original municipalities)
 # Clean and harmonise the per-year INEGI registered-birth files into birth
 # counts by municipality x parent-sex x 5-year age group x year. Works at
 # ORIGINAL-municipality level and writes fert.RDS. The grouped-municipality
@@ -7,10 +7,10 @@
 #
 # Loads the supplied per-year fertility (input-data-processed/fertility datasets/),
 # joins population + IMM_2020 + geo_info.
-# Reads : input-data-processed/fertility datasets/*.RDS, geo_info.RDS (ch1_040),
+# Reads : input-data-processed/fertility datasets/*.RDS, geo_info.RDS (ch2_040),
 #         input-data-raw/population/...1_Grupo_Quinq..., input-data-raw/marginalization/IMM_2020.xls
 # Writes: input-data-processed/fert.RDS (municipality level)
-# Run after: ch1_040
+# Run after: ch2_040
 # =============================================================================
 
 ###########################################
@@ -29,7 +29,7 @@ source("R/preprocess_fertility.R"); source("R/preprocess_mortality.R"); source("
 source("R/marginalization.R")
 source("R/load_year_panels.R")
 
-fig_dir <- "output/ch1"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+fig_dir <- "output/ch2"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load the SUPPLIED per-year fertility datasets into fert_YYYY objects (the
 # output of preprocess_fertility() on the raw INEGI files). Lets the pipeline
@@ -77,7 +77,7 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
 print(p_pie)
-ggsave(file.path(fig_dir, "ch1_050_pie_birth_year_dist.pdf"), p_pie, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_050_pie_birth_year_dist.pdf"), p_pie, width = 12, height = 8)
 
 # Combine and aggregate all available years (1985-2024).
 births <- fert_panel |>
@@ -189,7 +189,7 @@ std_raw$mpi <- as.numeric(std_raw$mpi)
 y_lim <- c(0, 0.15)
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (fertility)", y_lim = y_lim)
 print(p_raw_pts)
-ggsave(file.path(fig_dir, "ch1_050_std_fert_rate_2020.pdf"), p_raw_pts, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_2020.pdf"), p_raw_pts, width = 8, height = 6)
 
 #--------------- Iterate over all the years considered ---------------------
 std_raw_all_fert <- compute_std_rate(fert) %>%
@@ -205,7 +205,7 @@ p_raw_pts <- plot_std_rate(data = std_raw_all_fert, tt = "Raw data (fertility) -
   facet_wrap(~ year)
 
 print(p_raw_pts)
-ggsave(file.path(fig_dir, "ch1_050_std_fert_rate_all_years.pdf"), p_raw_pts, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_all_years.pdf"), p_raw_pts, width = 12, height = 8)
 # Get the unique years from the 'fert' dataset
 years <- unique(fert$year)
 
@@ -304,7 +304,7 @@ p_std_mort_age <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.fact
        y = "Standardized Mortality Rate") +
   theme_minimal()
 print(p_std_mort_age)
-ggsave(file.path(fig_dir, "ch1_050_std_mort_rate_age.pdf"), p_std_mort_age, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_050_std_mort_rate_age.pdf"), p_std_mort_age, width = 8, height = 6)
 
 #Plot
 p_std_fert_age <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
@@ -316,7 +316,7 @@ p_std_fert_age <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.fact
        y = "Standardized Fertility Rate") +
   theme_minimal()
 print(p_std_fert_age)
-ggsave(file.path(fig_dir, "ch1_050_std_fert_rate_age.pdf"), p_std_fert_age, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_age.pdf"), p_std_fert_age, width = 8, height = 6)
 
 
 std_age_sex <- std_age_sex %>% arrange(year, sex, age)
@@ -341,7 +341,7 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
-ggsave(file.path(fig_dir, "ch1_050_std_fert_rate_age_sex.pdf"), p, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_age_sex.pdf"), p, width = 8, height = 6)
 
 years <- seq(2017, 2023, 1)
 
@@ -362,7 +362,7 @@ for (yr in years) {
 library(readr)
 
 if (!file.exists("input-data-raw/marginalization/Indicadores_municipales_sabana_DA.csv")) {
-  message("ch1_050: skipping poverty-index (MPI) section — Indicadores_municipales_sabana_DA.csv not in input-data-raw/ (optional CONAPO file).")
+  message("ch2_050: skipping poverty-index (MPI) section — Indicadores_municipales_sabana_DA.csv not in input-data-raw/ (optional CONAPO file).")
 } else {
 Indicadores_municipales_sabana_DA <- read_csv("input-data-raw/marginalization/Indicadores_municipales_sabana_DA.csv")
 mpi <- Indicadores_municipales_sabana_DA %>% select(ent, nom_ent, mun, nom_mun, pobreza) %>% rename(mpi=pobreza)

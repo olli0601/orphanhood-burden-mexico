@@ -1,12 +1,12 @@
 # =============================================================================
-# ch3_050_delay_analysis.R  ·  Chapter 3 — Delay vs rates
-# Relate registration delays to mortality/fertility rates and marginalization
-# across municipalities.
+# ch3_050_delay_analysis_births_and_deaths.R  ·  Chapter 3 — Delay vs rates (births & deaths)
+# Relate BIRTH and DEATH registration delays to mortality/fertility rates and
+# marginalization across municipalities.
 #
 # Reads : input-data-processed/{deaths, births, grouped_municipality_50000,
 #         marg_index}.RDS
 # Writes: output/ch3/ (figures)
-# Run after: ch1_060, ch2_010
+# Run after: ch2_060, ch2_010
 # =============================================================================
 
 library(dplyr)

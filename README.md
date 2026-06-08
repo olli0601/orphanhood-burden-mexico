@@ -66,17 +66,21 @@ downloaded by a script (see the Data section below for the full description of e
   auto-downloadable files are retrieved — extracting these archives is only needed to
   regenerate the per-year panels from raw (run `ch1_011`, see Data → *Manual raw archives*).
 
-**1. Chapter 1–3 (Raw data → harmonised panels), in order.** The numeric prefix is the
-*thesis chapter*, so the run order interleaves Ch.1 and Ch.2: the grouping (`ch2_010`)
-runs **before** `ch1_040`/`ch1_050`, which attach the grouped-municipality ids it builds.
+**1. Chapter 1–3 (Raw data → harmonised panels), in order.** Filename order is run
+order. The grouping (`ch2_010`) precedes `ch2_040`/`ch2_050`/`ch2_060` because those
+attach the grouped-municipality ids it builds (hence the mortality/fertility cleaning
+sits under the `ch2_` prefix, after the aggregation). `ch1_011` is only needed when
+(re)building the per-year panels from the raw archives — skip it on the default
+"start from the supplied processed datasets" path.
 
 ```bash
 pixi run Rscript scripts-R/ch1_010_get_input_data_raw.R               # download / locate raw inputs
+pixi run Rscript scripts-R/ch1_011_extract_raw_archives.R            # extract manual .tar.zst (births/deaths) — only when (re)building panels from raw
 pixi run Rscript scripts-R/ch1_015_bootstrap_from_processed.R         # per-year -> births/deaths/population/geo_info/marg_index
 pixi run Rscript scripts-R/ch2_010_group_mun.R                        # municipality aggregation (519 grouped units)
-pixi run Rscript scripts-R/ch1_040_clean_mort.R                       # -> mort.RDS (original municipalities)
-pixi run Rscript scripts-R/ch1_050_clean_fert.R                       # -> fert.RDS (original municipalities)
-pixi run Rscript scripts-R/ch1_060_prepare_datasets.R                 # grouped-mun panels + marginalization + rural/urban
+pixi run Rscript scripts-R/ch2_040_clean_mort.R                       # -> mort.RDS (original municipalities)
+pixi run Rscript scripts-R/ch2_050_clean_fert.R                       # -> fert.RDS (original municipalities)
+pixi run Rscript scripts-R/ch2_060_prepare_datasets.R                 # grouped-mun panels + marginalization + rural/urban
 pixi run Rscript scripts-R/ch3_010_clean_mortality_by_grouped_mun.R   # -> mort_by_grouped_mun.RDS
 pixi run Rscript scripts-R/ch3_020_clean_fertility_by_grouped_mun.R   # -> fert_by_grouped_mun.RDS
 ```

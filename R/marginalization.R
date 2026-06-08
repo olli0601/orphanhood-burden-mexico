@@ -1,6 +1,6 @@
 # marginalization.R
 # Shared helpers for the CONAPO marginalization workbooks and the geographic
-# lookup, isolated from the duplicated inline blocks in ch1_005/ch1_040/ch1_060.
+# lookup, isolated from the duplicated inline blocks in ch1_005/ch2_040/ch2_060.
 # =============================================================================
 
 # Read a CONAPO IMM workbook and standardise its column names. `year` selects the

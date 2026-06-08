@@ -1,5 +1,5 @@
 # =============================================================================
-# ch1_060_prepare_datasets.R  ·  Chapter 1 — Analytical panel builder
+# ch2_060_prepare_datasets.R  ·  Chapter 1 — Analytical panel builder
 # Master assembly script: re-aggregate births/deaths/population/marginalization
 # to the new (merged) municipalities, build the long birth/death panels, the
 # monthly-birth nowcasting input, and the area-type lookups.
@@ -13,7 +13,7 @@
 # Writes: input-data-processed/{deaths, births, births_grouped_mun, geo_info, geo_info_grouped_mun,
 #         population, population_grouped_mun, mpi_mun, mpi_classified, mpi_grouped_mun, mpi_imputed,
 #         marg_index, index_grouped_mun, index_marg}.RDS
-# Run after: ch1_050, ch2_010
+# Run after: ch2_050, ch2_010
 # =============================================================================
 
 library(dplyr)
@@ -46,7 +46,7 @@ saveRDS(deaths, file = "input-data-processed/deaths.RDS")
 # ---- mort_df (single-age, orphans) and deaths_df_long require the raw INEGI
 #      files via preprocess_orphans() / preprocess_mortality_long(); the supplied
 #      per-year RDS do not carry these. Skipped here (feed Chapter 5).
-message("ch1_060: skipping mort_df / deaths_df_long (need raw orphans/long preprocessing).")
+message("ch2_060: skipping mort_df / deaths_df_long (need raw orphans/long preprocessing).")
 
 
 grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
@@ -268,7 +268,7 @@ births_grouped_mun <- births |>
 saveRDS(births_grouped_mun, file = "input-data-processed/births_grouped_mun.RDS")
 
 # index_marg / im.tmp (mun-level detail) feed Chapter 5; need fuller mun-level MPI.
-message("ch1_060: skipping index_marg / im.tmp (need fuller mun-level MPI).")
+message("ch2_060: skipping index_marg / im.tmp (need fuller mun-level MPI).")
 
 
 

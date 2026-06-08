@@ -1,5 +1,5 @@
 # =============================================================================
-# ch1_040_clean_mort.R  ·  Chapter 1 — Mortality cleaning (original municipalities)
+# ch2_040_clean_mort.R  ·  Chapter 1 — Mortality cleaning (original municipalities)
 # Clean and harmonise the per-year INEGI registered-death files into death
 # counts by municipality x sex x 5-year age group x year; build the population
 # and geographic-lookup tables used downstream. Works at ORIGINAL-municipality
@@ -36,7 +36,7 @@ source("R/marginalization.R")
 source("R/load_year_panels.R")
 source("R/grouped_mun.R")
 
-fig_dir <- "output/ch1"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+fig_dir <- "output/ch2"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Load the SUPPLIED per-year mortality datasets into mort_YYYY objects. These
 # are the output of preprocess_mortality() on the raw INEGI files; loading them
@@ -86,7 +86,7 @@ p <- ggplot(data_summary, aes(x = factor(year_reg), y = count, fill = factor(yea
         legend.box.spacing = unit(0.5, "cm"))
 
 print(p)
-ggsave(file.path(fig_dir, "ch1_040_reg_deaths_by_year.pdf"), p, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_040_reg_deaths_by_year.pdf"), p, width = 12, height = 8)
 
 # Convert the data to a proportion for pie charts
 data_summary_pie <- data_summary %>%
@@ -111,7 +111,7 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
 print(p_pie)
-ggsave(file.path(fig_dir, "ch1_040_death_year_dist_pie.pdf"), p_pie, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_040_death_year_dist_pie.pdf"), p_pie, width = 12, height = 8)
 
 # Combine the cleaned datasets together and aggregate counts in case of duplicate groups
 deaths <- mort_panel |>
@@ -170,7 +170,7 @@ p_total_deaths_delay <- ggplot(deaths_summary, aes(x = factor(year_reg), y = log
     title = "Total Deaths by Occurrence Year and Reporting Year"
   ) +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch1_040_total_deaths_delay.pdf"), p_total_deaths_delay, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_040_total_deaths_delay.pdf"), p_total_deaths_delay, width = 8, height = 6)
 
 ## Proportion -- DELAY IN THE FUTURE
 p_delay_by_occurrence <- ggplot(deaths_prop_occ, aes(x = factor(year), y = (prop_deaths), fill = factor(delay))) +
@@ -185,7 +185,7 @@ p_delay_by_occurrence <- ggplot(deaths_prop_occ, aes(x = factor(year), y = (prop
     subtitle = "Each bar shows the proportion of deaths by how many years later they were registered"
   ) +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch1_040_delay_by_occurrence.pdf"), p_delay_by_occurrence, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_040_delay_by_occurrence.pdf"), p_delay_by_occurrence, width = 8, height = 6)
 
 
 ## Proportion -- DELAY IN THE PAST
@@ -201,7 +201,7 @@ p_delay_by_registration <- ggplot(deaths_prop_reg, aes(x = factor(year_reg), y =
     subtitle = "Each bar shows the proportion of registered deaths by how many years earlier the death occurred"
   ) +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch1_040_delay_by_registration.pdf"), p_delay_by_registration, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_040_delay_by_registration.pdf"), p_delay_by_registration, width = 8, height = 6)
 #------
 
 p_delay_pct_by_reg <- ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop_deaths, fill = factor(delay))) +
@@ -215,7 +215,7 @@ p_delay_pct_by_reg <- ggplot(deaths_prop_reg, aes(x = factor(year_reg), y = prop
     title = "Proportion of Deaths by Occurrence Year and Reporting Delay"
   ) +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch1_040_delay_pct_by_reg.pdf"), p_delay_pct_by_reg, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_040_delay_pct_by_reg.pdf"), p_delay_pct_by_reg, width = 8, height = 6)
 
 
 
@@ -277,7 +277,7 @@ std_raw$mpi <- as.numeric(std_raw$mpi)
 # ---------------------Plot mortality rate against mpi -------------------------
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (mortality)")
 print(p_raw_pts)
-ggsave(file.path(fig_dir, "ch1_040_std_rate_2023.pdf"), p_raw_pts, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch2_040_std_rate_2023.pdf"), p_raw_pts, width = 8, height = 6)
 
 #------------------------ Iterate over the years -------------------------------
 years <- seq(1990, 2023, 1)
@@ -295,7 +295,7 @@ for (yr in years) {
   
   p_raw_pts <- plot_std_rate(data = std_raw, tt= paste("Raw data (mortality) - Year", yr))
   print(p_raw_pts)
-  ggsave(file.path(fig_dir, paste0("ch1_040_std_rate_", yr, ".pdf")), p_raw_pts, width = 8, height = 6)
+  ggsave(file.path(fig_dir, paste0("ch2_040_std_rate_", yr, ".pdf")), p_raw_pts, width = 8, height = 6)
 }
 
 # Arrange all the plots in a 3x6 grid (3 rows, 6 columns)
@@ -316,7 +316,7 @@ p_raw_pts <- plot_std_rate(data = std_raw_all, tt = "Raw data (mortality) - Year
   facet_wrap(~ year)
 
 print(p_raw_pts)
-ggsave(file.path(fig_dir, "ch1_040_std_rate_multiyear.pdf"), p_raw_pts, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_040_std_rate_multiyear.pdf"), p_raw_pts, width = 12, height = 8)
 #------------------------------------------------------------------------------
 ######
 #First: group by year, sex and age
@@ -342,7 +342,7 @@ p_std_rate_age_2023 <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as
        x = "Age Group",
        y = "Standardized Mortality Rate") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch1_040_std_rate_age_2023.pdf"), p_std_rate_age_2023, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_040_std_rate_age_2023.pdf"), p_std_rate_age_2023, width = 12, height = 8)
 
 
 std_age_sex <- std_age_sex %>% arrange(year, sex, age)
@@ -367,7 +367,7 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
 
 
 print(p)
-ggsave(file.path(fig_dir, "ch1_040_std_rate_age_sex.pdf"), p, width = 12, height = 8)
+ggsave(file.path(fig_dir, "ch2_040_std_rate_age_sex.pdf"), p, width = 12, height = 8)
 
 
 

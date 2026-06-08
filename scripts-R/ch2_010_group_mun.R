@@ -8,7 +8,7 @@
 #         input-data-processed/{population, geo_info}.RDS (ch1)
 # Writes: input-data-processed/{aggregated_muni_50000, grouped_municipality_50000,
 #         aggregated_muni_30000, grouped_municipality_30000, mex_muni}.RDS
-# Run after: ch1_040 (population, geo_info); feeds ch1_060 and ch3+
+# Run after: ch2_040 (population, geo_info); feeds ch2_060 and ch3+
 # =============================================================================
 
 library(sf)
