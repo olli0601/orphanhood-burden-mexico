@@ -105,7 +105,8 @@
       "Bash(zstd -dc \"input-data-raw/deaths/General Deaths Database 1990-1994.tar.zst\")",
       "Bash(grep -iE \"DEFUN.*\\\\.dbf$\")",
       "Bash(sed -n '45,95p' R/preprocess_fertility.R)",
-      "Bash(sed -n '5,30p' R/preprocess_mortality.R)"
+      "Bash(sed -n '5,30p' R/preprocess_mortality.R)",
+      "Bash(echo \"ch1_010 rc=$?\")"
     ],
     "additionalDirectories": [
       "/Users/or105/git/orphanhood-burden-mexico/output/ch3",

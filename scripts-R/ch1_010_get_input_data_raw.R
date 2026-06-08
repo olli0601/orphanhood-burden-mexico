@@ -215,8 +215,14 @@ deaths_manual <- c(
 )
 
 message("== manual files check (births 1985-2016 + all deaths) ==")
+# A manual file counts as present whether it is the original .zip or the
+# committed .tar.zst archive (see scripts-R/ch1_011_extract_raw_archives.R).
 .check_manual <- function(files, subdir) {
-  miss <- files[!file.exists(file.path(dirs[subdir], files))]
+  present <- function(f) {
+    cand <- c(f, paste0(sub("[.]zip$", "", f), ".tar.zst"))
+    any(file.exists(file.path(dirs[subdir], cand)))
+  }
+  miss <- files[!vapply(files, present, logical(1))]
   if (length(miss) == 0) {
     message(sprintf("  [ok  ] all %d %s files present", length(files), subdir))
   } else {
