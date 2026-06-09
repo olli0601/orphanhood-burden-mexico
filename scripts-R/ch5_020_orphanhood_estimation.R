@@ -1,5 +1,5 @@
 # =============================================================================
-# ch5_040_orphans_long_CORRECT.R  ·  Chapter 5 — Orphanhood estimation
+# ch5_020_orphanhood_estimation.R  ·  Chapter 5 — Orphanhood estimation
 # Definitive long-format orphanhood pipeline: incidence + lifetime prevalence by child-age and parent-sex, plus spatial correlation (Moran's I / LISA).
 # Reads input-data-processed/{geo_info*,population_grouped_mun,birth_data_all,deaths*,mort_df,births_long,fertility_df,survival_df,aggregated_muni_50000,index_grouped_mun,grouped_municipality_50000}.RDS -> input-data-processed/{fertility_df,survival_df}.RDS, output/ch5/.
 # =============================================================================
@@ -23,6 +23,7 @@ suppressPackageStartupMessages({
 
 source("R/rates.R")
 
+dir.create("output/ch5", recursive = TRUE, showWarnings = FALSE)
 
 # =============================================================================
 #  1.  Read data
@@ -31,8 +32,14 @@ source("R/rates.R")
 g <- "input-data-processed/"
 
 geo_info      <- readRDS(paste0(g, "geo_info.RDS"))
+# geo_info has no group_id — attach it from the ch2 grouping so original-mun
+# joins below (e.g. deaths_raw) can map mun -> group_id.
+geo_info <- dplyr::left_join(
+  geo_info,
+  sf::st_drop_geometry(readRDS(paste0(g, "grouped_municipality_50000.RDS"))) |>
+    dplyr::select(mun, group_id),
+  by = "mun")
 population_df <- readRDS(paste0(g, "population_grouped_mun.RDS"))
-fr_raw        <- readRDS(paste0(g, "birth_data_all.RDS"))
 deaths_raw    <- readRDS(paste0(g, "deaths.RDS"))
 mort_df       <- readRDS(paste0(g, "mort_df.RDS"))
 fertility_df <- readRDS(paste0(g, "births_long.RDS"))
@@ -67,8 +74,7 @@ population_df_long <- population_df |>
 #  3.  Fertility – births / parent_pop in same band
 # =============================================================================
 
-fertility_df <- fertility_df |>
-  left_join(geo_info |> select(mun, group_id), by ="mun")|>
+fertility_df <- fertility_df |>   # births_long already at group_id level (ch5_010)
   group_by(group_id, year, sex, age) |>
   summarise(births = sum(births), .groups = "drop") |>
   filter(age < 80) |>
@@ -85,11 +91,12 @@ fr_plot <- fertility_df %>%
     .groups = "drop"
   )
 
-ggplot(fr_plot, aes(age, mean_fr, colour = sex, group = sex)) +
+p_fert_rate_check <- ggplot(fr_plot, aes(age, mean_fr, colour = sex, group = sex)) +
   geom_line(linewidth = 1.2) + geom_point() +
   scale_x_discrete(guide = guide_axis(angle = 90)) +
   labs(title = "Population-weighted fertility rate by parent age band (1990-2023)",
        y = "Births per adult", x = "Parent age band")
+ggsave("output/ch5/ch5_020_fert_rate_check.pdf", p_fert_rate_check, width = 8, height = 6)
 
 
 # =============================================================================
@@ -105,19 +112,15 @@ population_children <- population_df %>%
   mutate(population = round(population / (age_end - age_start + 1))) %>%
   select(group_id, year, sex, age, population)
 
-survival_df <- mort_df %>%
-  mutate(age = as.numeric(age)) %>%
-  left_join(geo_info %>% select(mun, group_id), by = "mun") %>%
-  group_by(group_id, year, sex, age) %>%
-  summarise(deaths = sum(deaths), .groups = "drop") %>%
-  left_join(population_children,
-            by = c("group_id", "year", "sex", "age")) %>%
-  mutate(hazard_1yr = deaths / population,
-         survival_prob = 1 - hazard_1yr) %>%
-  group_by(group_id, year, age) %>%
-  summarise(survival_prob = weighted.mean(survival_prob,
-                                          w = population, na.rm = TRUE),
-            .groups = "drop")
+# Child survival: empirical, POOLED NATIONAL single-year schedule from ch5_011
+# (extracted from the raw EDR microdata). Per-group child deaths are too sparse to
+# use directly — see the CV-vs-population diagnostics in ch5_011 — so the national
+# year × age survival curve (sexes averaged) is broadcast to every grouped unit.
+survival_df <- readRDS(paste0(g, "child_survival.RDS")) |>   # year, sex, age, survival_prob
+  group_by(year, age) |>
+  summarise(survival_prob = mean(survival_prob, na.rm = TRUE), .groups = "drop")
+survival_df <- tidyr::crossing(group_id = unique(population_df$group_id), survival_df) |>
+  dplyr::select(group_id, year, age, survival_prob)
 
 # =============================================================================
 #  5.  Expected ration of actual children per parent  (C_df)
@@ -254,8 +257,7 @@ O_death_df <- band_summary %>%
 #  8.  Adult 5‑year hazard (≤79) – population‑weighted
 # =============================================================================
 
-deaths_single <- readRDS(paste0(g, "deaths_df_long.RDS")) %>%
-  left_join(geo_info %>% select(mun, group_id), by = "mun") %>%
+deaths_single <- readRDS(paste0(g, "deaths_df_long.RDS")) %>%   # already group_id-level
   filter(age < 80)
 
 deaths_single <- deaths_single %>%
@@ -526,12 +528,13 @@ p_incidence <- ggplot(O_new_tot, aes(year, O_new)) +
   theme_minimal()
 
 print(p_incidence)
+ggsave("output/ch5/ch5_020_incidence.pdf", p_incidence, width = 8, height = 6)
 
 inc_plot <- O_new_tot |>
   group_by(year) |>
   summarise(incidence = sum(O_new, na.rm = T), .groups = "drop")
 
-ggplot(inc_plot, aes(year, incidence)) +
+p_incidence_line <- ggplot(inc_plot, aes(year, incidence)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 3) +
   scale_y_continuous(
@@ -541,6 +544,7 @@ ggplot(inc_plot, aes(year, incidence)) +
   labs(title = "Incidence of Orphanhood (new cases)",
        y = "New orphans", x = NULL) +
   theme_minimal()
+ggsave("output/ch5/ch5_020_incidence_line.pdf", p_incidence_line, width = 8, height = 6)
 
 
 # ------------ 2. Lifetime prevalence (total) ------------------
@@ -553,6 +557,7 @@ p_prev_tot <- ggplot(O_lifetime_total, aes(year, Olifetime)) +
   theme_minimal()
 
 print(p_prev_tot)
+ggsave("output/ch5/ch5_020_prevalence_total.pdf", p_prev_tot, width = 8, height = 6)
 # ------------ 3. Prevalence by child age (latest year) --------
 latest_year <- max(O_lifetime$year)
 p_prev_age <- O_lifetime[year == latest_year] |>
@@ -564,6 +569,7 @@ p_prev_age <- O_lifetime[year == latest_year] |>
   theme_minimal()
 
 print(p_prev_age)
+ggsave("output/ch5/ch5_020_prevalence_by_child_age.pdf", p_prev_age, width = 8, height = 6)
 # ------------ 4. Lifetime prevalence by parent sex ------------
 p_prev_sex <- ggplot(O_lifetime_sex, aes(year, Olifetime, colour = sex)) +
   geom_line(linewidth = 1.1) +
@@ -577,6 +583,7 @@ p_prev_sex <- ggplot(O_lifetime_sex, aes(year, Olifetime, colour = sex)) +
   theme_minimal()
 
 print(p_prev_sex)
+ggsave("output/ch5/ch5_020_prevalence_by_sex.pdf", p_prev_sex, width = 8, height = 6)
 
 ## 1️⃣  Collapse to one number per (year, sex)
 prev_sex_year <- O_lifetime_sex |>
@@ -592,7 +599,7 @@ prev_sex_year <- O_lifetime_sex |>
 ## 2️⃣  Plot
 prev_sex_year <- prev_sex_year |>
   filter(year >=2015)
-ggplot(prev_sex_year, aes(year, Olifetime, colour = sex)) +
+p_prev_sex_filtered <- ggplot(prev_sex_year, aes(year, Olifetime, colour = sex)) +
   geom_line(linewidth = 1.3) +
   geom_point(size = 3) +
   scale_colour_manual(values = c("Mother" = "#b2182b",
@@ -613,6 +620,7 @@ ggplot(prev_sex_year, aes(year, Olifetime, colour = sex)) +
     plot.title      = element_text(face = "bold", size = 18, hjust = 0.5),
     legend.position = "right"
   )
+ggsave("output/ch5/ch5_020_prev_sex_filtered.pdf", p_prev_sex_filtered, width = 8, height = 6)
 # ------------ Display together --------------------------------
 (p_incidence | p_prev_tot) / (p_prev_age | p_prev_sex)
 
@@ -657,7 +665,7 @@ rate_df <- inc_orphans |>
   mutate(rate_per_100 = orphans / children * 100)
 
 ## 4️⃣  Plot
-ggplot(rate_df, aes(year, rate_per_100, colour = sex, group = sex)) +
+p_incidence_rate_sex <- ggplot(rate_df, aes(year, rate_per_100, colour = sex, group = sex)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 3) +
   scale_colour_manual(values = c("Mother" = "#b2182b", "Father" = "#2166ac"),
@@ -677,6 +685,7 @@ ggplot(rate_df, aes(year, rate_per_100, colour = sex, group = sex)) +
     plot.title      = element_text(face = "bold", size = 18, hjust = 0.5),
     legend.position = "right"
   )
+ggsave("output/ch5/ch5_020_incidence_rate_sex.pdf", p_incidence_rate_sex, width = 8, height = 6)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -731,6 +740,7 @@ inc_map <- ggplot(map_data_incidence) +
   )
 
 print(inc_map)
+ggsave("output/ch5/ch5_020_incidence_map.pdf", inc_map, width = 8, height = 7)
 
 # ──────────────────────────────────────────────────────────────
 #  Incidence rate per 1000 children MAP
@@ -784,6 +794,7 @@ rate_map <- ggplot(map_data_rate) +
   )
 
 print(rate_map)
+ggsave("output/ch5/ch5_020_orphan_rate_map.pdf", rate_map, width = 8, height = 7)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -835,6 +846,7 @@ map_mpi <- ggplot(mpi) +
 
 
 print(map_mpi)
+ggsave("output/ch5/ch5_020_mpi_map.pdf", map_mpi, width = 8, height = 7)
 
 # ──────────────────────────────────────────────────────────────
 #  Lineplot standardized fertility rate in 2023
@@ -868,7 +880,7 @@ std_raw_year <- std_raw |>
 library(ggplot2)
 library(scales)
 
-ggplot(std_raw_year, aes(year, fertility_rate, group = sex, color = sex)) +
+p_std_fert_rate <- ggplot(std_raw_year, aes(year, fertility_rate, group = sex, color = sex)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 2.5) +
   scale_y_continuous(
@@ -885,6 +897,7 @@ ggplot(std_raw_year, aes(year, fertility_rate, group = sex, color = sex)) +
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5)
   )
+ggsave("output/ch5/ch5_020_std_fert_rate.pdf", p_std_fert_rate, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Standardized fertility rate MAP
@@ -937,6 +950,7 @@ fert_map <- ggplot(fert_map) +
     plot.title      = element_text(face = "bold", size = 14),
     plot.subtitle   = element_text(size = 10)
   )
+ggsave("output/ch5/ch5_020_std_fert_map.pdf", fert_map, width = 8, height = 7)
 
 # ──────────────────────────────────────────────────────────────
 #  Lineplot standardized mortality rate in 2023
@@ -974,7 +988,7 @@ std_raw_mort_year <- std_raw_mort_year |>
 library(ggplot2)
 library(scales)
 
-ggplot(std_raw_mort_year, aes(year, mortality_rate, group = sex, color = sex)) +
+p_std_mort_rate <- ggplot(std_raw_mort_year, aes(year, mortality_rate, group = sex, color = sex)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 2.5) +
   scale_y_continuous(
@@ -991,6 +1005,7 @@ ggplot(std_raw_mort_year, aes(year, mortality_rate, group = sex, color = sex)) +
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5)
   )
+ggsave("output/ch5/ch5_020_std_mort_rate.pdf", p_std_mort_rate, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Standardized mortality rate map in 2023
@@ -1045,6 +1060,7 @@ mort_map <- ggplot(mort_map) +
   )
 
 print(mort_map)
+ggsave("output/ch5/ch5_020_std_mort_map.pdf", mort_map, width = 8, height = 7)
 map_mpi | inc_map
 (map_mpi | inc_map) / (fert_map | mort_map)
 (map_mpi | rate_map) / (fert_map | mort_map)
@@ -1056,7 +1072,7 @@ map_mpi | inc_map
 preval_plot <- O_lifetime_total |>
   filter(year >=2010)
 
-ggplot(preval_plot, aes(year, Olifetime)) +
+p_prevalence_total <- ggplot(preval_plot, aes(year, Olifetime)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 2.5) +
   labs(
@@ -1068,6 +1084,7 @@ ggplot(preval_plot, aes(year, Olifetime)) +
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5)
   )
+ggsave("output/ch5/ch5_020_prevalence_2010_2023.pdf", p_prevalence_total, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Orphanhood prevalence in 2023
@@ -1085,7 +1102,7 @@ orphans_rate <- orphans_by_year_sex %>%
   filter(year >= 2007)
 
 
-ggplot(orphans_rate, aes(x = year, y = rate_per_100, color = sex)) +
+p_prevalence_rate_sex <- ggplot(orphans_rate, aes(x = year, y = rate_per_100, color = sex)) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
@@ -1101,8 +1118,9 @@ ggplot(orphans_rate, aes(x = year, y = rate_per_100, color = sex)) +
   theme_minimal()+
   theme(panel.border = element_rect(color = "black",
                                     fill = NA,
-                                    linewidth = 0.7), 
+                                    linewidth = 0.7),
         panel.grid = element_blank())
+ggsave("output/ch5/ch5_020_prevalence_rate_sex.pdf", p_prevalence_rate_sex, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Orphanhood prevalence in 2023
@@ -1139,9 +1157,9 @@ orphan_rate_by_age <- orphan_rate_by_age %>%
   mutate(age_group = factor(age_group, levels = c("0-4", "5-9", "10-17")))|>
   filter(year >= 2007)
 
-ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_100, color = age_group)) +
+p_prevalence_rate_age <- ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_100, color = age_group)) +
   geom_line(size = 1.2) +
-  geom_point(size = 2)+ 
+  geom_point(size = 2)+
   scale_color_manual(
     values = c("0-4" = "#a8dbc5", "5-9" = "#5ea77a", "10-17" = "#33673b"),
     name = "Age of child",
@@ -1159,8 +1177,9 @@ ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_100, color = age_group)) +
   theme_minimal()+
   theme(panel.border = element_rect(color = "black",
                                     fill = NA,
-                                    linewidth = 0.7), 
+                                    linewidth = 0.7),
         panel.grid = element_blank())
+ggsave("output/ch5/ch5_020_prevalence_rate_age.pdf", p_prevalence_rate_age, width = 8, height = 6)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1184,8 +1203,7 @@ df <- mpi |>
 grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
 grouped_municipality_50000 <- st_drop_geometry(grouped_municipality_50000)
 deaths_long <- readRDS("input-data-processed/deaths_df_long.RDS") |>
-  filter(year >=2000) |>
-  left_join(grouped_municipality_50000 |> select(group_id, mun), by = "mun")|>
+  filter(year >=2000) |>   # already group_id-level (ch5_010)
   group_by(group_id, year, age, sex) |>
   summarise(deaths = sum(deaths, na.rm = T), .groups = "drop")
 
@@ -1273,7 +1291,8 @@ plots <- lapply(x_vars, function(x) {
 })
 
 # 4. Display the plots side-by-side (adjust ncol if you prefer)
-wrap_plots(plots, ncol = 2)
+p_dotplots_corr <- wrap_plots(plots, ncol = 2)
+ggsave("output/ch5/ch5_020_dotplots_corr.pdf", p_dotplots_corr, width = 8, height = 6)
 
 # 5. (Optional) print a tidy correlation table
 corr_tbl <- do.call(rbind, lapply(x_vars, function(x) {
@@ -1335,8 +1354,20 @@ vars <- c(
   pov    = "poverty_index"   # e.g., MPI or similar, direction noted elsewhere
 )
 
-# Check presence
-stopifnot(all(unlist(vars) %in% names(muni)))
+# Check presence. The 4 analysis variables (orphan_rate, std_fert_rate,
+# std_mort_rate, poverty_index) are computed earlier in this script as separate
+# per-group objects (map_data_rate, the std-rate summaries, marg_index) but are
+# not yet merged onto the grouped geometry here. Until that merge is wired, skip
+# the spatial-correlation / Fig-18 four-panel + Moran/LISA block gracefully — all
+# the incidence/prevalence results and the orphanhood choropleth above are
+# already produced.
+if (!all(unlist(vars) %in% names(muni))) {
+  message("ch5_020: spatial-correlation / Fig 18 (poverty–orphanhood panels + Moran/LISA) ",
+          "skipped — orphan_rate/std_fert_rate/std_mort_rate/poverty_index are not yet ",
+          "merged onto the grouped geometry (TODO: join map_data_rate + std-rate ",
+          "summaries + marg_index by group_id). Main results above were produced.")
+  quit(save = "no", status = 0)
+}
 
 # Keep a clean data frame for correlation work (no geometry)
 dat <- muni |>

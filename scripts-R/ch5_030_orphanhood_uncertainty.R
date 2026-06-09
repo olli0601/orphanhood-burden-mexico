@@ -1,5 +1,5 @@
 # =============================================================================
-# ch5_050_CI_orphanhoos.R  ·  Chapter 5 — Orphanhood estimation
+# ch5_030_orphanhood_uncertainty.R  ·  Chapter 5 — Orphanhood estimation
 # Uncertainty intervals for orphanhood via co-monotone Poisson resampling of births, deaths and populations.
 # Reads input-data-processed/deaths_df_long.RDS (prefix g) -> credible intervals.
 # =============================================================================
@@ -29,6 +29,32 @@ sim_counts <- function(DT, count_col, strata = c("group_id","sex","age"), year_c
   DT[]
 }
 
+# --- Load inputs ---------------------------------------------------------------
+# This script was originally run in-session after the main engine; load the inputs
+# it relies on so it runs standalone (after ch5_010 + ch5_020).
+suppressPackageStartupMessages({ library(dplyr); library(tidyr); library(stringr) })
+dir.create("output/ch5", recursive = TRUE, showWarnings = FALSE)
+g <- "input-data-processed/"
+population_df <- readRDS(paste0(g, "population_grouped_mun.RDS"))
+fertility_df  <- readRDS(paste0(g, "fertility_df.RDS"))   # written by ch5_020
+mort_df       <- readRDS(paste0(g, "mort_df.RDS"))        # written by ch5_010
+population_children <- population_df %>%
+  mutate(age_start = as.numeric(str_extract(age, "^\\d+")),
+         age_end   = as.numeric(str_extract(age, "\\d+$"))) %>%
+  rowwise() %>% mutate(age = list(seq(age_start, age_end))) %>%
+  ungroup() %>% unnest(age) %>% filter(age <= 17) %>%
+  mutate(population = round(population / (age_end - age_start + 1))) %>%
+  select(group_id, year, sex, age, population)
+
+# Pooled NATIONAL child survival (ch5_011), broadcast to all groups — used as a
+# fixed, stable schedule in every draw (per-group child deaths are too sparse to
+# resample meaningfully; child survival contributes negligible UI width).
+child_surv_grp <- readRDS(paste0(g, "child_survival.RDS")) %>%
+  group_by(year, age) %>%
+  summarise(survival_prob = mean(survival_prob, na.rm = TRUE), .groups = "drop")
+child_surv_grp <- tidyr::crossing(group_id = unique(population_df$group_id), child_surv_grp) %>%
+  select(group_id, year, age, survival_prob) %>% as.data.table()
+
 # build single-age parent population (≤79) once (you already did most of this)
 parent_pop_single <- population_df %>%
   mutate(age_start = as.numeric(stringr::str_extract(age, "^\\d+")),
@@ -46,8 +72,7 @@ births_single <- fertility_df %>%                      # group_id,year,sex,age,b
   as.data.table()
 
 # adult deaths (single-age, <80) for hazards and to aggregate into parent bands
-deaths_single_base <- readRDS(paste0(g, "deaths_df_long.RDS")) %>%
-  left_join(geo_info %>% select(mun, group_id), by = "mun") %>%
+deaths_single_base <- readRDS(paste0(g, "deaths_df_long.RDS")) %>%   # group_id-level (ch5_010)
   group_by(group_id, year, sex, age) %>%
   summarise(deaths = sum(deaths), .groups = "drop") %>%
   filter(as.numeric(age) < 60) %>%
@@ -57,8 +82,7 @@ deaths_single_base <- readRDS(paste0(g, "deaths_df_long.RDS")) %>%
 child_pop_single <- as.data.table(population_children)  # group_id,year,sex,age,population
 
 # child deaths for survival_df come from mort_df (already read)
-child_deaths_single <- mort_df %>%
-  left_join(geo_info %>% select(mun, group_id), by = "mun") %>%
+child_deaths_single <- mort_df %>%   # group_id-level (ch5_010)
   group_by(group_id, year, sex, age) %>%
   summarise(deaths = sum(deaths), .groups = "drop") %>%
   mutate(age = as.integer(age)) %>% as.data.table()
@@ -85,15 +109,8 @@ one_draw <- function(){
                            , fertility_rate := births / population
                          ][!is.na(fertility_rate)]
   
-  # 3) Child survival (per your step 4) on simulated deaths/pop
-  surv_sim <- cdeaths_sim[cpop_sim,
-                          on = .(group_id, year, sex, age),
-                          nomatch = 0][
-                            , .(hazard_1yr = deaths / population), 
-                            by = .(group_id, year, age)
-                          ][
-                            , .(group_id, year, age, survival_prob = 1 - hazard_1yr)
-                          ]
+  # 3) Child survival: fixed pooled-national schedule (ch5_011), not resampled.
+  surv_sim <- copy(child_surv_grp)
   
   # 4) Expected surviving children per parent age/child age (your Step 5)
   setDT(fert_sim); setDT(surv_sim)
@@ -300,7 +317,7 @@ summarise_ui <- function(draws) {
 
 ui_stable <- function(now, prev, tol_rel, tol_abs) {
   m <- merge(now, prev,
-             by = intersect(names(now), names(prev)),
+             by = setdiff(intersect(names(now), names(prev)), c("med", "lwr", "upr")),
              suffixes = c(".now", ".prev"))
   if (nrow(m) == 0L) return(FALSE)
   # relative deltas (protect against 0 denominators)
@@ -310,14 +327,17 @@ ui_stable <- function(now, prev, tol_rel, tol_abs) {
   abs_lwr <- abs(m$lwr.now - m$lwr.prev)
   abs_upr <- abs(m$upr.now - m$upr.prev)
   
-  # Stable if EVERY point passes either the relative or the absolute threshold on both ends
-  all((rel_lwr < tol_rel | abs_lwr < tol_abs) &
-        (rel_upr < tol_rel | abs_upr < tol_abs))
+  # Stable if EVERY point passes either the relative or the absolute threshold on both ends.
+  # NA cells (e.g. year×stratum with no data) count as not-yet-stable (keep drawing).
+  ok <- (rel_lwr < tol_rel | abs_lwr < tol_abs) &
+        (rel_upr < tol_rel | abs_upr < tol_abs)
+  ok[is.na(ok)] <- FALSE
+  all(ok)
 }
 
 report_delta <- function(now, prev) {
   m <- merge(now, prev,
-             by = intersect(names(now), names(prev)),
+             by = setdiff(intersect(names(now), names(prev)), c("med", "lwr", "upr")),
              suffixes = c(".now", ".prev"))
   if (nrow(m) == 0L) return(list(max_rel = NA_real_, max_abs = NA_real_))
   rel <- function(a_now, a_prev) abs(a_now - a_prev) / pmax(1e-9, abs(a_prev))
@@ -397,7 +417,7 @@ ui_sex_plot <- ui_sex_final %>%
   mutate(sex = dplyr::recode(sex, female = "Mother", male = "Father"))
 
 # Error bars (like your screenshot). Uncomment the ribbon if you want bands too.
-ggplot(ui_sex_plot, aes(year, med, colour = sex, group = sex)) +
+p_ui_sex <- ggplot(ui_sex_plot, aes(year, med, colour = sex, group = sex)) +
   # geom_ribbon(aes(ymin = lwr, ymax = upr, fill = sex), alpha = 0.12, colour = NA) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 2.5) +
@@ -408,6 +428,7 @@ ggplot(ui_sex_plot, aes(year, med, colour = sex, group = sex)) +
   labs(title = "Orphanhood prevalence per 100 children by parent sex",
        y = "Per 100 children", x = NULL) +
   theme_classic(base_size = 14)
+ggsave("output/ch5/ch5_030_ui_incidence_by_sex.pdf", p_ui_sex, width = 8, height = 6)
 
 
 # ========= Plot 2: Prevalence per 100 children — by child age group =========
@@ -415,7 +436,7 @@ ui_age_plot <- ui_age_final %>%
   mutate(age_group = factor(age_group, levels = c("0-4","5-9","10-17")))
 
 # Error bars (like your screenshot). Uncomment the ribbon if you want bands too.
-ggplot(ui_age_plot, aes(year, med, colour = age_group, group = age_group)) +
+p_ui_age <- ggplot(ui_age_plot, aes(year, med, colour = age_group, group = age_group)) +
   # geom_ribbon(aes(ymin = lwr, ymax = upr, fill = age_group), alpha = 0.12, colour = NA) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 2) +
@@ -429,3 +450,4 @@ ggplot(ui_age_plot, aes(year, med, colour = age_group, group = age_group)) +
   theme_minimal(base_size = 14) +
   theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 0.7),
         panel.grid = element_blank())
+ggsave("output/ch5/ch5_030_ui_incidence_by_age.pdf", p_ui_age, width = 8, height = 6)

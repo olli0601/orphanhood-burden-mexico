@@ -98,6 +98,26 @@ scripts-R/ch4_030_nowcast_barplots.R               # nowcast 2016-2023 -> regist
 scripts-R/ch4_040_nowcast_evaluation_diagnostics.R # diagnostics (Fig 14) + per-municipality evaluation
 scripts-R/ch4_050_assemble_nowcasted_births.R      # -> birth_data_all.RDS (input to Chapter 5 orphanhood)
 ```
+
+**3. Chapter 5 (orphanhood estimation).**
+Standardized orphanhood engine (fertility histories + child survival + parental deaths
+→ incidence & prevalence, double/prior adjustment). Runs from the Chapter-3 grouped
+panels; the Chapter-4 nowcasting adjustment is an optional refinement, not required.
+```bash
+scripts-R/ch5_010_build_long_inputs.R        # ch3 grouped panels -> single-year mort_df/deaths_df_long/births_long
+scripts-R/ch5_011_build_child_mortality.R    # child deaths from raw EDR -> national child-survival schedule (+ noise diagnostics)
+scripts-R/ch5_020_orphanhood_estimation.R    # incidence + prevalence (Figs 16,17,19,20) + orphanhood maps
+scripts-R/ch5_030_orphanhood_uncertainty.R   # credible intervals (co-monotone Poisson resampling)
+```
+> Notes: child survival (ages 0–17) is built by `ch5_011` from the **raw EDR microdata**
+> (which carry all ages; the per-year panels drop 0–14). Its diagnostics show the
+> yearly-rate CV is ~flat (~0.33) vs grouped-unit size — i.e. at ≥50k units the noise is
+> the real 1990–2023 decline, not small-N sampling — but single-age cells are sparse, so a
+> **pooled national, year-specific** single-year survival schedule is broadcast to all
+> units (per-group EB shrinkage is the natural refinement). The Fig-18 spatial four-panel
+> + Moran/LISA block in `ch5_020` is skipped pending a per-group merge of
+> orphan-rate / std-rate / poverty onto the geometry (flagged in-script).
+
 ## Data
 
 All inputs are harmonized to a common municipality–sex–age–year resolution. Ages are

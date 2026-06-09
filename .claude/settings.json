@@ -124,11 +124,30 @@
       "Bash(sed -n '655,670p' scripts-R/ch4_230_gam_nowcast_2016_2023_barplots.R)",
       "Bash(git mv *)",
       "Bash(sed -n '1,563p' scripts-R/ch4_230_gam_nowcast_2016_2023_barplots.R)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(sed -n '108,128p' scripts-R/ch5_040_orphans_long_CORRECT.R)",
+      "Bash(sed -n '255,272p' scripts-R/ch5_040_orphans_long_CORRECT.R)",
+      "Bash(sed -n '47,80p' scripts-R/ch5_050_CI_orphanhoos.R)",
+      "Bash(grep -vE \"^$\")",
+      "Bash(sed -n '233,240p' scripts-R/ch5_020_orphanhood_estimation.R)",
+      "Bash(sed -n '1184,1192p' scripts-R/ch5_020_orphanhood_estimation.R)",
+      "Bash(perl -pi -e 's{# ch5_040_orphans_long_CORRECT\\\\.R}{# ch5_020_orphanhood_estimation.R}' scripts-R/ch5_020_orphanhood_estimation.R)",
+      "Bash(perl -pi -e 's{# ch5_050_CI_orphanhoos\\\\.R}{# ch5_030_orphanhood_uncertainty.R}' scripts-R/ch5_030_orphanhood_uncertainty.R)",
+      "Bash(sed -n '2p' scripts-R/ch5_020_orphanhood_estimation.R scripts-R/ch5_030_orphanhood_uncertainty.R)",
+      "Bash(perl -ni -e 'print unless /^fr_raw\\\\s+<- readRDS\\\\\\(paste0\\\\\\(g, \"birth_data_all.RDS\"\\\\\\)\\\\\\)/' scripts-R/ch5_020_orphanhood_estimation.R)",
+      "Bash(echo \"ch5_020 rc=$?\")",
+      "Bash(awk -F: '$1<1312')",
+      "Bash(echo \"ch5_030 rc=$?\")",
+      "Bash(grep -q 'ch5_030 rc=' __TRACKED_VAR__/bx73ly7ut.output)",
+      "Bash(grep -q 'ch5_030 rc=' __TRACKED_VAR__/bm6us1nn3.output)",
+      "Bash(grep -q 'ch5_030 rc=' __TRACKED_VAR__/b3i3to7pd.output)",
+      "Bash(perl -0pi -e 's/\\(# mort_df group_id × year × sex × single-age \\\\\\(0-17\\\\\\) × deaths \\\\\\(child;\\\\n# ages 0-14 absent[^\\\\n]*\\\\n# => child survival ≈ 1[^\\\\n]*\\\\n# analogous to the optional nowcasting refinement on births\\\\.\\\\\\)\\)/$1\\\\n# NOTE: child survival is now built empirically by ch5_011 \\(raw EDR child deaths\\);\\\\n# this zero-filled child block in mort_df is retained only as a fallback.\\)/s' scripts-R/ch5_010_build_long_inputs.R)",
+      "Bash(awk '{print $6,$7,$8,$9}')"
     ],
     "additionalDirectories": [
       "/Users/or105/git/orphanhood-burden-mexico/output/ch3",
-      "/Users/or105/git/orphanhood-burden-mexico/output"
+      "/Users/or105/git/orphanhood-burden-mexico/output",
+      "/tmp"
     ]
   }
 }

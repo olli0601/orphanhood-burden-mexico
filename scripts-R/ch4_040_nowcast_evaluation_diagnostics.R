@@ -200,8 +200,8 @@ plot_top20 <- ggplot(df_top20_annual, aes(x = year)) +
   )
 
 # Save top-20 plot
-ggsave("output/ch4/evaluation_top20_municipalities.png", plot_top20, 
-       width = 12, height = 10, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_top20_municipalities.pdf", plot_top20,
+       width = 12, height = 10, bg = "white")
 cat("Saved: evaluation_top20_municipalities.png\n")
 
 # =============================================================================
@@ -240,8 +240,8 @@ plot_bottom20 <- ggplot(df_bottom20_annual, aes(x = year)) +
   )
 
 # Save bottom-20 plot
-ggsave("output/ch4/evaluation_bottom20_municipalities.png", plot_bottom20, 
-       width = 12, height = 10, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_bottom20_municipalities.pdf", plot_bottom20,
+       width = 12, height = 10, bg = "white")
 cat("Saved: evaluation_bottom20_municipalities.png\n")
 
 # =============================================================================
@@ -281,10 +281,10 @@ scatter_bottom20 <- ggplot(df_bottom20, aes(x = observed, y = predicted)) +
   )
 
 # Save scatter plots
-ggsave("output/ch4/evaluation_scatter_top20.png", scatter_top20, 
-       width = 8, height = 6, dpi = 300, bg = "white")
-ggsave("output/ch4/evaluation_scatter_bottom20.png", scatter_bottom20, 
-       width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_scatter_top20.pdf", scatter_top20,
+       width = 8, height = 6, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_scatter_bottom20.pdf", scatter_bottom20,
+       width = 8, height = 6, bg = "white")
 
 cat("Saved: evaluation_scatter_top20.png\n")
 cat("Saved: evaluation_scatter_bottom20.png\n")
@@ -317,8 +317,8 @@ fits_vs_data_overall <- ggplot(all_predictions, aes(x = observed, y = predicted)
     panel.grid.minor = element_blank()
   )
 
-ggsave("output/ch4/fits_vs_data_overall_log.png", fits_vs_data_overall, 
-       width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_fits_vs_data_overall_log.pdf", fits_vs_data_overall,
+       width = 10, height = 8, bg = "white")
 cat("Saved: fits_vs_data_overall_log.png\n")
 
 # 2. Linear Scale Fits vs Data
@@ -338,8 +338,8 @@ fits_vs_data_linear <- ggplot(all_predictions, aes(x = observed, y = predicted))
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/fits_vs_data_linear.png", fits_vs_data_linear, 
-       width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_fits_vs_data_linear.pdf", fits_vs_data_linear,
+       width = 10, height = 8, bg = "white")
 cat("Saved: fits_vs_data_linear.png\n")
 
 # 3. Fits vs Data by Dataset (Validation vs Test)
@@ -369,8 +369,8 @@ if ("dataset" %in% names(all_predictions)) {
       panel.grid.minor = element_blank()
     )
   
-  ggsave("output/ch4/fits_vs_data_by_dataset.png", fits_vs_data_by_dataset, 
-         width = 12, height = 6, dpi = 300, bg = "white")
+  ggsave("output/ch4/ch4_040_fits_vs_data_by_dataset.pdf", fits_vs_data_by_dataset,
+         width = 12, height = 6, bg = "white")
   cat("Saved: fits_vs_data_by_dataset.png\n")
 }
 
@@ -398,8 +398,8 @@ fits_vs_data_age <- all_predictions %>%
     panel.grid.minor = element_blank()
   )
 
-ggsave("output/ch4/fits_vs_data_by_age.png", fits_vs_data_age, 
-       width = 15, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_fits_vs_data_by_age.pdf", fits_vs_data_age,
+       width = 15, height = 8, bg = "white")
 cat("Saved: fits_vs_data_by_age.png\n")
 
 # 5. Fits vs Data by Sex
@@ -429,8 +429,8 @@ fits_vs_data_sex <- all_predictions %>%
     panel.grid.minor = element_blank()
   )
 
-ggsave("output/ch4/fits_vs_data_by_sex.png", fits_vs_data_sex, 
-       width = 12, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_fits_vs_data_by_sex.pdf", fits_vs_data_sex,
+       width = 12, height = 6, bg = "white")
 cat("Saved: fits_vs_data_by_sex.png\n")
 
 # 6. Selected Municipalities: Detailed Fits vs Data Time Series
@@ -477,8 +477,8 @@ fits_vs_data_time_series <- all_predictions %>%
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-ggsave("output/ch4/fits_vs_data_time_series_selected.png", fits_vs_data_time_series, 
-       width = 14, height = 10, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_fits_vs_data_time_series_selected.pdf", fits_vs_data_time_series,
+       width = 14, height = 10, bg = "white")
 cat("Saved: fits_vs_data_time_series_selected.png\n")
 
 # =============================================================================
@@ -561,8 +561,8 @@ residuals_vs_fitted_classic <- ggplot(all_predictions_residuals, aes(x = fitted,
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/diagnostic_residuals_vs_fitted.png", residuals_vs_fitted_classic, 
-       width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_diagnostic_residuals_vs_fitted.pdf", residuals_vs_fitted_classic,
+       width = 10, height = 8, bg = "white")
 cat("Saved: diagnostic_residuals_vs_fitted.png\n")
 
 # 2. Standardized Residuals vs Fitted
@@ -583,8 +583,8 @@ standardized_residuals_plot <- ggplot(all_predictions_residuals, aes(x = fitted,
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/diagnostic_standardized_residuals_vs_fitted.png", standardized_residuals_plot, 
-       width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_diagnostic_standardized_residuals_vs_fitted.pdf", standardized_residuals_plot,
+       width = 10, height = 8, bg = "white")
 cat("Saved: diagnostic_standardized_residuals_vs_fitted.png\n")
 
 # 3. Square Root of Absolute Residuals vs Fitted (Scale-Location plot)
@@ -603,8 +603,8 @@ sqrt_abs_residuals_plot <- ggplot(all_predictions_residuals, aes(x = fitted, y =
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/diagnostic_scale_location.png", sqrt_abs_residuals_plot, 
-       width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_diagnostic_scale_location.pdf", sqrt_abs_residuals_plot,
+       width = 10, height = 8, bg = "white")
 cat("Saved: diagnostic_scale_location.png\n")
 
 # 4. Residuals vs Fitted by Age Band
@@ -627,8 +627,8 @@ residuals_fitted_age <- ggplot(all_predictions_residuals, aes(x = fitted, y = re
     axis.text = element_text(size = 7)
   )
 
-ggsave("output/ch4/diagnostic_residuals_vs_fitted_by_age.png", residuals_fitted_age, 
-       width = 15, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_diagnostic_residuals_vs_fitted_by_age.pdf", residuals_fitted_age,
+       width = 15, height = 8, bg = "white")
 cat("Saved: diagnostic_residuals_vs_fitted_by_age.png\n")
 
 # 5. Residuals vs Fitted by Sex
@@ -649,8 +649,8 @@ residuals_fitted_sex <- ggplot(all_predictions_residuals, aes(x = fitted, y = re
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/diagnostic_residuals_vs_fitted_by_sex.png", residuals_fitted_sex, 
-       width = 12, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_diagnostic_residuals_vs_fitted_by_sex.pdf", residuals_fitted_sex,
+       width = 12, height = 6, bg = "white")
 cat("Saved: diagnostic_residuals_vs_fitted_by_sex.png\n")
 
 # 6. Histogram of Residuals
@@ -669,8 +669,8 @@ residuals_histogram <- ggplot(all_predictions_residuals, aes(x = residual)) +
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/diagnostic_residuals_histogram.png", residuals_histogram, 
-       width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_diagnostic_residuals_histogram.pdf", residuals_histogram,
+       width = 10, height = 6, bg = "white")
 cat("Saved: diagnostic_residuals_histogram.png\n")
 
 # =============================================================================
@@ -802,8 +802,8 @@ if (!is.null(nowcast_data)) {
       strip.text = element_text(size = 10)
     )
   
-  ggsave("output/ch4/nowcast_demonstration_selected_municipalities.png", nowcast_demo_barplot, 
-         width = 15, height = 10, dpi = 300, bg = "white")
+  ggsave("output/ch4/ch4_040_nowcast_demonstration_selected_municipalities.pdf", nowcast_demo_barplot,
+         width = 15, height = 10, bg = "white")
   cat("Saved: nowcast_demonstration_selected_municipalities.png\n")
   
   # =============================================================================
@@ -902,8 +902,8 @@ if (!is.null(nowcast_data)) {
       strip.text = element_text(size = 10)
     )
   
-  ggsave("output/ch4/fertility_curves_complete_vs_nowcast.png", fertility_curves_plot, 
-         width = 14, height = 10, dpi = 300, bg = "white")
+  ggsave("output/ch4/ch4_040_fertility_curves_complete_vs_nowcast.pdf", fertility_curves_plot,
+         width = 14, height = 10, bg = "white")
   cat("Saved: fertility_curves_complete_vs_nowcast.png\n")
   
   # =============================================================================
@@ -951,8 +951,8 @@ if (!is.null(nowcast_data)) {
       strip.text = element_text(size = 11)
     )
   
-  ggsave("output/ch4/nowcast_time_series_detailed.png", detailed_series_plot, 
-         width = 12, height = 8, dpi = 300, bg = "white")
+  ggsave("output/ch4/ch4_040_nowcast_time_series_detailed.pdf", detailed_series_plot,
+         width = 12, height = 8, bg = "white")
   cat("Saved: nowcast_time_series_detailed.png\n")
   
   # =============================================================================
@@ -1016,8 +1016,8 @@ residual_fitted_plot <- ggplot(all_predictions_residuals, aes(x = predicted, y =
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/evaluation_residuals_vs_fitted.png", residual_fitted_plot, 
-       width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_residuals_vs_fitted.pdf", residual_fitted_plot,
+       width = 10, height = 6, bg = "white")
 cat("Saved: evaluation_residuals_vs_fitted.png\n")
 
 # 2. Relative Error vs Fitted Values (scaled analysis)
@@ -1038,8 +1038,8 @@ relative_error_plot <- ggplot(all_predictions_residuals, aes(x = predicted, y = 
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/evaluation_relative_error_vs_fitted.png", relative_error_plot, 
-       width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_relative_error_vs_fitted.pdf", relative_error_plot,
+       width = 10, height = 6, bg = "white")
 cat("Saved: evaluation_relative_error_vs_fitted.png\n")
 
 # 3. QQ Plot for Residual Distribution
@@ -1058,8 +1058,8 @@ qq_plot <- ggplot(all_predictions_residuals, aes(sample = residual)) +
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-ggsave("output/ch4/evaluation_qq_plot_residuals.png", qq_plot, 
-       width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_qq_plot_residuals.pdf", qq_plot,
+       width = 8, height = 6, bg = "white")
 cat("Saved: evaluation_qq_plot_residuals.png\n")
 
 # 4. Residuals by Year (temporal patterns)
@@ -1093,8 +1093,8 @@ residual_year_plot <- all_predictions_residuals %>%
     legend.position = "bottom"
   )
 
-ggsave("output/ch4/evaluation_residuals_by_year.png", residual_year_plot, 
-       width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_residuals_by_year.pdf", residual_year_plot,
+       width = 10, height = 6, bg = "white")
 cat("Saved: evaluation_residuals_by_year.png\n")
 
 # 5. Residuals by Age Band (demographic patterns)
@@ -1131,8 +1131,8 @@ residual_age_plot <- all_predictions_residuals %>%
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-ggsave("output/ch4/evaluation_residuals_by_age.png", residual_age_plot, 
-       width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_residuals_by_age.pdf", residual_age_plot,
+       width = 10, height = 6, bg = "white")
 cat("Saved: evaluation_residuals_by_age.png\n")
 
 # 6. Residuals by Sex (gender patterns)
@@ -1168,8 +1168,8 @@ residual_sex_plot <- all_predictions_residuals %>%
     legend.position = "bottom"
   )
 
-ggsave("output/ch4/evaluation_residuals_by_sex.png", residual_sex_plot, 
-       width = 8, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_040_evaluation_residuals_by_sex.pdf", residual_sex_plot,
+       width = 8, height = 6, bg = "white")
 cat("Saved: evaluation_residuals_by_sex.png\n")
 
 # =============================================================================

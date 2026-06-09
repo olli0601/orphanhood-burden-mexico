@@ -373,7 +373,7 @@ p_male <- plot_data_combined %>%
 # Combined plot
 p_combined <- p_female / p_male
 
-ggsave("output/ch4/nowcast_barplots_by_sex.png", p_combined, width = 14, height = 10, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_030_barplots_by_sex.pdf", p_combined, width = 14, height = 10, bg = "white")
 
 # PLOT TOTAL (BOTH SEXES)
 
@@ -411,7 +411,7 @@ p_total <- plot_data_total %>%
 print(p_total)
 
 
-ggsave("output/ch4/nowcast_barplots_total.png", p_total, width = 16, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_030_barplots_total.pdf", p_total, width = 16, height = 8, bg = "white")
 
 cat("Saved: nowcast_barplots_by_sex.png\n")
 cat("Saved: nowcast_barplots_total.png\n")
@@ -517,7 +517,7 @@ annual_plots <- map(2016:2023, function(year) {
 # Arrange annual plots in grid
 p_annual_grid <- wrap_plots(annual_plots, ncol = 4, nrow = 2)
 
-ggsave("output/ch4/nowcast_annual_details_2016_2023.png", p_annual_grid, width = 16, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_030_annual_details_2016_2023.pdf", p_annual_grid, width = 16, height = 8, bg = "white")
 
 cat("Saved: nowcast_annual_details_2016_2023.png\n")
 

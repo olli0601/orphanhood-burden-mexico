@@ -285,7 +285,7 @@ p_comparison <- comparison_data %>%
   annotation_logticks() +
   theme(legend.position = "bottom")
 
-ggsave("output/ch4/model_fixes_comparison.png", p_comparison, width = 12, height = 6, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_020_model_fixes_comparison.pdf", p_comparison, width = 12, height = 6, bg = "white")
 cat("Saved: model_fixes_comparison.png\n")
 
 ################################################################################

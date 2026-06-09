@@ -395,7 +395,7 @@ if(nrow(validation_predictions) > 0) {
     annotation_logticks() +
     theme(legend.position = "bottom")
   
-  ggsave("output/ch4/validation_performance_improved.png", p1, width = 10, height = 8, dpi = 300, bg = "white")
+  ggsave("output/ch4/ch4_010_validation_performance.pdf", p1, width = 10, height = 8, bg = "white")
   cat("Saved: validation_performance_improved.png\n")
 }
 
@@ -420,7 +420,7 @@ if(nrow(test_predictions) > 0) {
     annotation_logticks() +
     theme(legend.position = "bottom")
   
-  ggsave("output/ch4/test_performance_improved.png", p2, width = 10, height = 8, dpi = 300, bg = "white")
+  ggsave("output/ch4/ch4_010_test_performance.pdf", p2, width = 10, height = 8, bg = "white")
   cat("Saved: test_performance_improved.png\n")
 }
 
@@ -446,7 +446,7 @@ p3 <- results_summary_train %>%
   ) +
   theme(legend.position = "none")
 
-ggsave("output/ch4/beta_distributions_improved.png", p3, width = 10, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_010_beta_distributions.pdf", p3, width = 10, height = 8, bg = "white")
 cat("Saved: beta_distributions_improved.png\n")
 
 # 4. FERTILITY CURVE SHIFTS FOR SAMPLE MUNICIPALITIES
@@ -562,7 +562,7 @@ p4 <- curve_plot_data %>%
   ) +
   guides(color = guide_legend(ncol = 3), linetype = guide_legend(ncol = 3))
 
-ggsave("output/ch4/fertility_curves_shifts_improved.png", p4, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("output/ch4/ch4_010_fertility_curves_shifts.pdf", p4, width = 12, height = 8, bg = "white")
 cat("Saved: fertility_curves_shifts_improved.png\n")
 
 ################################################################################
