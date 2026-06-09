@@ -1,5 +1,5 @@
 # =============================================================================
-# ch4_210_gam_evaluation_top_bottom_municipalities.R  ·  Chapter 4 — Delay-adjusted nowcasting
+# ch4_040_nowcast_evaluation_diagnostics.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Detailed per-municipality evaluation (best/worst fits) with extensive diagnostic and fit-vs-data plots.
 # Reads input-data-processed/{*_predictions_corrected,nowcast_predictions_2016_2023,stacked_births_data_2016_2023}.RDS -> output/ch4/*.png + RDS.
 # =============================================================================
@@ -548,7 +548,7 @@ all_predictions_residuals <- all_predictions %>%
 residuals_vs_fitted_classic <- ggplot(all_predictions_residuals, aes(x = fitted, y = residual)) +
   geom_point(alpha = 0.4, color = "#2196F3", size = 0.6) +
   geom_hline(yintercept = 0, color = "#E91E63", linewidth = 1.2) +
-  geom_smooth(method = "loess", color = "#FF9800", se = TRUE, linewidth = 1) +
+  geom_smooth(method = "loess", color = "#FF9800", se = FALSE, linewidth = 1) +
   labs(
     title = "Diagnostic: Residuals vs Fitted Values",
     subtitle = "Points should be randomly scattered around zero line (red)",
@@ -570,7 +570,7 @@ standardized_residuals_plot <- ggplot(all_predictions_residuals, aes(x = fitted,
   geom_point(alpha = 0.4, color = "#2196F3", size = 0.6) +
   geom_hline(yintercept = 0, color = "#E91E63", linewidth = 1.2) +
   geom_hline(yintercept = c(-2, 2), color = "#FF9800", linewidth = 1, linetype = "dashed") +
-  geom_smooth(method = "loess", color = "#FF9800", se = TRUE, linewidth = 1) +
+  geom_smooth(method = "loess", color = "#FF9800", se = FALSE, linewidth = 1) +
   labs(
     title = "Diagnostic: Standardized Residuals vs Fitted Values",
     subtitle = "Points outside ±2 lines (orange) are potential outliers",
@@ -590,7 +590,7 @@ cat("Saved: diagnostic_standardized_residuals_vs_fitted.png\n")
 # 3. Square Root of Absolute Residuals vs Fitted (Scale-Location plot)
 sqrt_abs_residuals_plot <- ggplot(all_predictions_residuals, aes(x = fitted, y = sqrt(abs_residual))) +
   geom_point(alpha = 0.4, color = "#2196F3", size = 0.6) +
-  geom_smooth(method = "loess", color = "#FF9800", se = TRUE, linewidth = 1) +
+  geom_smooth(method = "loess", color = "#FF9800", se = FALSE, linewidth = 1) +
   labs(
     title = "Diagnostic: Scale-Location Plot",
     subtitle = "Checks homoscedasticity - should be roughly horizontal",
@@ -635,7 +635,7 @@ cat("Saved: diagnostic_residuals_vs_fitted_by_age.png\n")
 residuals_fitted_sex <- ggplot(all_predictions_residuals, aes(x = fitted, y = residual)) +
   geom_point(alpha = 0.5, color = "#2196F3", size = 0.6) +
   geom_hline(yintercept = 0, color = "#E91E63", linewidth = 1.2) +
-  geom_smooth(method = "loess", color = "#FF9800", se = TRUE, linewidth = 1) +
+  geom_smooth(method = "loess", color = "#FF9800", se = FALSE, linewidth = 1) +
   facet_wrap(~sex, ncol = 2) +
   labs(
     title = "Diagnostic: Residuals vs Fitted by Sex",
@@ -1003,7 +1003,7 @@ all_predictions_residuals <- all_predictions %>%
 residual_fitted_plot <- ggplot(all_predictions_residuals, aes(x = predicted, y = residual)) +
   geom_point(alpha = 0.3, color = "#2196F3") +
   geom_hline(yintercept = 0, color = "#E91E63", linewidth = 1) +
-  geom_smooth(method = "loess", color = "#FF9800", se = TRUE) +
+  geom_smooth(method = "loess", color = "#FF9800", se = FALSE) +
   labs(
     title = "Residuals vs Fitted Values - Pattern Detection",
     subtitle = "Loess smoother shows systematic patterns (should be flat around 0)",
@@ -1024,7 +1024,7 @@ cat("Saved: evaluation_residuals_vs_fitted.png\n")
 relative_error_plot <- ggplot(all_predictions_residuals, aes(x = predicted, y = relative_error)) +
   geom_point(alpha = 0.3, color = "#2196F3") +
   geom_hline(yintercept = 0, color = "#E91E63", linewidth = 1) +
-  geom_smooth(method = "loess", color = "#FF9800", se = TRUE) +
+  geom_smooth(method = "loess", color = "#FF9800", se = FALSE) +
   ylim(-2, 2) +  # Limit to reasonable range
   labs(
     title = "Relative Error vs Fitted Values - Scale-Independent Patterns",

@@ -1,5 +1,5 @@
 # =============================================================================
-# ch4_100_gam_nowcast_proper_validation.R  ·  Chapter 4 — Delay-adjusted nowcasting
+# ch4_010_nowcast_fit_validate.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Train/test-split validation of the GAM nowcast; produces validation & test predictions and metrics.
 # Reads input-data-processed/{births_grouped_mun,population_grouped_mun}.RDS -> writes input-data-processed/{municipality_models_proper_validation,validation_*,test_*}.RDS, output/ch4/*.png.
 # =============================================================================

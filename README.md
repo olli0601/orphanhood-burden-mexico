@@ -66,13 +66,7 @@ downloaded by a script (see the Data section below for the full description of e
   auto-downloadable files are retrieved — extracting these archives is only needed to
   regenerate the per-year panels from raw (run `ch1_011`, see Data → *Manual raw archives*).
 
-**1. Chapter 1–3 (Raw data → harmonised panels), in order.** Filename order is run
-order. The grouping (`ch2_010`) precedes `ch2_040`/`ch2_050`/`ch2_060` because those
-attach the grouped-municipality ids it builds (hence the mortality/fertility cleaning
-sits under the `ch2_` prefix, after the aggregation). `ch1_011` is only needed when
-(re)building the per-year panels from the raw archives — skip it on the default
-"start from the supplied processed datasets" path.
-
+**1. Chapter 1–3 (Raw data → harmonised panels).** 
 Run the following in this order in `VSCode` or using the `Terminal` via `pixi run Rscript xxx`: 
 ```bash
 # run once to download data:
@@ -94,7 +88,16 @@ scripts-R/ch3_040_delay_analysis_deaths.R
 scripts-R/ch3_050_delay_analysis_births_and_deaths.R 
 ```
 
-
+**2. Chapter 4 (nowcasting birth data).** 
+Run the following in this order in `VSCode` or using the `Terminal` via `pixi run Rscript xxx`: 
+```bash
+# Chapter 4 (nowcasting) — delay-adjusted GAM birth nowcast (see docs/nowcasting_pipeline.md):
+scripts-R/ch4_010_nowcast_fit_validate.R           # fit GAM (train 1990-05 / validate 06-10 / test 11-15)
+scripts-R/ch4_020_nowcast_bias_correct.R           # bias / coverage / outlier correction
+scripts-R/ch4_030_nowcast_barplots.R               # nowcast 2016-2023 -> registered+nowcasted barplots (Figs 12/13)
+scripts-R/ch4_040_nowcast_evaluation_diagnostics.R # diagnostics (Fig 14) + per-municipality evaluation
+scripts-R/ch4_050_assemble_nowcasted_births.R      # -> birth_data_all.RDS (input to Chapter 5 orphanhood)
+```
 ## Data
 
 All inputs are harmonized to a common municipality–sex–age–year resolution. Ages are

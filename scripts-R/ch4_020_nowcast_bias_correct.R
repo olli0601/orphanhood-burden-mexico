@@ -1,5 +1,5 @@
 # =============================================================================
-# ch4_110_gam_nowcast_critical_fixes.R  ·  Chapter 4 — Delay-adjusted nowcasting
+# ch4_020_nowcast_bias_correct.R  ·  Chapter 4 — Delay-adjusted nowcasting
 # Apply critical corrections to the validated predictions/metrics and flag problematic municipalities.
 # Reads input-data-processed/{validation,test}_{predictions,metrics}.RDS -> writes *_corrected.RDS, output/ch4/.
 # =============================================================================
