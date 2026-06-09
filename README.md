@@ -73,16 +73,25 @@ sits under the `ch2_` prefix, after the aggregation). `ch1_011` is only needed w
 (re)building the per-year panels from the raw archives — skip it on the default
 "start from the supplied processed datasets" path.
 
+Run the following in this order in `VSCode` or using the `Terminal` via `pixi run Rscript xxx`: 
 ```bash
-pixi run Rscript scripts-R/ch1_010_get_input_data_raw.R               # download / locate raw inputs
-pixi run Rscript scripts-R/ch1_011_extract_raw_archives.R            # extract manual .tar.zst (births/deaths) — only when (re)building panels from raw
-pixi run Rscript scripts-R/ch1_015_bootstrap_from_processed.R         # per-year -> births/deaths/population/geo_info/marg_index
-pixi run Rscript scripts-R/ch2_010_group_mun.R                        # municipality aggregation (519 grouped units)
-pixi run Rscript scripts-R/ch2_040_clean_mort.R                       # -> mort.RDS (original municipalities)
-pixi run Rscript scripts-R/ch2_050_clean_fert.R                       # -> fert.RDS (original municipalities)
-pixi run Rscript scripts-R/ch2_060_prepare_datasets.R                 # grouped-mun panels + marginalization + rural/urban
-pixi run Rscript scripts-R/ch3_010_clean_mortality_by_grouped_mun.R   # -> mort_by_grouped_mun.RDS
-pixi run Rscript scripts-R/ch3_020_clean_fertility_by_grouped_mun.R   # -> fert_by_grouped_mun.RDS
+# run once to download data:
+scripts-R/ch1_010_get_input_data_raw.R # download / locate raw inputs
+scripts-R/ch1_011_extract_raw_archives.R # extract manual .tar.zst (births/deaths) 
+
+# pipeline to prepare harmonised data panels:
+scripts-R/ch1_015_bootstrap_from_processed.R # per-year -> births/deaths/population/geo_info/marg_index
+scripts-R/ch2_010_group_mun.R # municipality aggregation (519 grouped units)
+scripts-R/ch2_040_clean_mort.R # -> creates mort.RDS (original municipalities)
+scripts-R/ch2_050_clean_fert.R # -> creates fert.RDS (original municipalities)
+scripts-R/ch2_060_prepare_datasets.R # grouped-mun panels + marginalization + rural/urban
+scripts-R/ch3_010_clean_mortality_by_grouped_mun.R # -> creates mort_by_grouped_mun.RDS
+scripts-R/ch3_020_clean_fertility_by_grouped_mun.R # -> creates fert_by_grouped_mun.RDS
+
+# exploratory data analyses:
+scripts-R/ch3_030_eda_mexico.R 
+scripts-R/ch3_040_delay_analysis_deaths.R 
+scripts-R/ch3_050_delay_analysis_births_and_deaths.R 
 ```
 
 
@@ -177,20 +186,6 @@ to keep the repository small — ~28 % smaller than the original `.zip`, and no 
 
 - **Reproducible (any OS):** `pixi run Rscript scripts-R/ch1_011_extract_raw_archives.R`
   — uses the `zstd` CLI bundled by pixi + R's `untar()`, extracting each archive in place.
-- **Windows, without pixi:** open directly in **7-Zip ≥ 21.01** (free), or with a standalone
-  `zstd.exe` (`zstd -d file.tar.zst` then untar). Windows Explorer's built-in zip handler
-  does **not** read `.tar.zst`, so one of these tools is required.
-- **macOS/Linux shell:** `zstd -dc file.tar.zst | tar xf -`.
-
-The default pipeline runs from the already-processed per-year datasets, so extracting the raw
-archives is only needed to regenerate from scratch.
-
-### Pre-processed datasets
-
-Pre-processed fertility and mortality datasets (death/birth counts by age group, sex, and
-municipality) were produced from the raw INEGI files. Mirror copies are available via
-Dropbox: [fertility](https://www.dropbox.com/t/IKzEQFCeuFFFKi5h),
-[mortality](https://www.dropbox.com/t/ZIbYNxir2hkWTx29).
 
 ### Reference / external estimates
 
