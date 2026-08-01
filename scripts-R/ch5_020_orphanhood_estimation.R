@@ -31,7 +31,7 @@ dir.create("output/ch5", recursive = TRUE, showWarnings = FALSE)
 
 g <- "input-data-processed/"
 
-geo_info      <- readRDS(paste0(g, "geo_info.RDS"))
+geo_info      <- readRDS(paste0(g, "geo_info_mun.RDS"))
 # geo_info has no group_id — attach it from the ch2 grouping so original-mun
 # joins below (e.g. deaths_raw) can map mun -> group_id.
 geo_info <- dplyr::left_join(

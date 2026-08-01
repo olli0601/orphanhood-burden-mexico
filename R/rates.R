@@ -49,66 +49,75 @@
   list(p_nat = p_nat, total = sum(p_nat$p_nat, na.rm = TRUE), year = use)
 }
 
-compute_std_fert_rate <- function(data) {
-  # Set fertility-specific column names
-  ctg <- "tot_births"
-  rte <- "fert_rate"
+# --- internal: directly standardised rate per unit-year-sex -------------------
+# Shared body of compute_std_mort_rate() / compute_std_fert_rate(), which were
+# identical apart from the rate column and the output name.
+#
+# `unit_col` is the spatial unit to report by. It defaults to "group_id" (the
+# ch2 aggregated units) but accepts "mun", which is what makes an ungrouped
+# baseline comparable with a grouped run: both then come from this one code path
+# rather than from two implementations whose difference would contaminate every
+# before/after-aggregation comparison.
+#
+# `std_pop` is the standard (reference) population: a data frame of sex, age,
+# p_nat. When NULL it is built here as before - the mean population per
+# unit-sex-age over the years present, summed over units. Pass one explicitly
+# when comparing several aggregation levels: the sums are algebraically equal,
+# but .drop_unstandardisable() removes a different row set at each level, so
+# leaving it implicit makes the levels quietly non-comparable.
+#
+# ⚠️ WHAT THIS RETURNS, AND AN OPEN QUESTION FOR THE RESEARCHERS.
+# The weights are p_nat / p_nat_total where the TOTAL spans every (sex, age)
+# present in `data`, but the sum below runs over ages WITHIN one sex. So when
+# both sexes are passed, a per-sex value carries only its own share of the
+# weight mass (~46% female / ~54% male on these panels) and is NOT a rate per
+# woman or per man - it is that sex's contribution to a rate per head of the
+# combined parental-age population. Consequences:
+#
+#   * MORTALITY: summing the two sexes gives the whole rate. Correct, and what
+#     ch2_020 and ch2_040 do.
+#   * FERTILITY: pass MOTHER ROWS ONLY. `sex` is the parent's sex and every
+#     birth appears on both the mother's and the father's row, so summing sexes
+#     double-counts. With female-only input the weights sum to 1 over the female
+#     bands and the result is births per woman, which is what you want.
+#
+# Whether the per-sex figures should instead be normalised within sex - making
+# each a true per-woman / per-man rate, and changing every published LEVEL - is
+# a definitional choice for the researchers, not a bug. Nothing here changes it;
+# the thesis never states which is intended (it defines no standardisation
+# method at all). Flagged in docs/audit/thesis_vs_code_backlog.md.
+.std_rate_by_unit <- function(data, rte, out_col, unit_col, std_pop, what) {
+  data <- .drop_unstandardisable(data, rte, what)
 
-  data <- .drop_unstandardisable(data, rte, "compute_std_fert_rate")
+  if (is.null(std_pop)) {
+    # Reference population by unit/sex/age, averaged over the years present (the
+    # old comment claiming "from 2023" was never what the code did), then summed
+    # to a national standard population.
+    std_pop <- data |>
+      dplyr::select(dplyr::all_of(c(unit_col, "sex", "age")), population) |>
+      dplyr::group_by(dplyr::across(dplyr::all_of(c(unit_col, "sex", "age")))) |>
+      dplyr::summarise(population = mean(population, na.rm = TRUE), .groups = "drop") |>
+      dplyr::group_by(sex, age) |>
+      dplyr::summarise(p_nat = sum(population, na.rm = TRUE), .groups = "drop")
+  }
+  p_nat_total <- sum(std_pop$p_nat, na.rm = TRUE)
 
-  # Step 1: Build a reference population by group/sex/age
-  pop_ref <- data |>
-    dplyr::select(group_id, sex, age, population) |>
-    group_by(group_id, sex, age) |>
-    summarise(population = mean(population, na.rm = TRUE), .groups = "drop")
+  data |>
+    dplyr::left_join(std_pop, by = c("sex", "age")) |>
+    dplyr::mutate(std_rate = (p_nat / p_nat_total) * .data[[rte]]) |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(c(unit_col, "year", "sex")))) |>
+    dplyr::summarise("{out_col}" := sum(std_rate, na.rm = TRUE), .groups = "drop")
+}
 
-  # Step 2: Compute national standard population (by sex and age)
-  p_nat <- pop_ref |>
-    group_by(sex, age) |>
-    summarise(p_nat = sum(population, na.rm = TRUE), .groups = "drop")
-
-  p_nat_total <- sum(p_nat$p_nat, na.rm = TRUE)
-  
-  # Step 3: Calculate standardized fertility rate
-  std_rate <- data |>
-    left_join(p_nat, by = c("sex", "age")) |>
-    mutate(std_rate = (p_nat / p_nat_total) * !!sym(rte)) |>
-    group_by(group_id, year, sex) |>
-    summarise(std_fert_rate = sum(std_rate, na.rm = TRUE), .groups = "drop")
-  
-  return(std_rate)
+compute_std_fert_rate <- function(data, unit_col = "group_id", std_pop = NULL) {
+  .std_rate_by_unit(data, "fert_rate", "std_fert_rate", unit_col, std_pop,
+                    "compute_std_fert_rate")
 }
 
 #-------------------------------------------------------------------------------
-compute_std_mort_rate <- function(data) {
-  ctg <- "tot_deaths"
-  rte <- "mort_rate"
-
-  data <- .drop_unstandardisable(data, rte, "compute_std_mort_rate")
-
-  # Step 1: Build a reference population by group/sex/age (averaged over the
-  # years present; the old comment claiming "from 2023" was never what the code
-  # did).
-  pop_ref <- data |>
-    dplyr::select(group_id, sex, age, population) |>
-    group_by(group_id, sex, age) |>
-    summarise(population = mean(population, na.rm = TRUE), .groups = "drop")
-
-  # Step 2: Build national standard population
-  p_nat <- pop_ref |>
-    group_by(sex, age) |>
-    summarise(p_nat = sum(population, na.rm = TRUE), .groups = "drop")
-
-  p_nat_total <- sum(p_nat$p_nat, na.rm = TRUE)
-  
-  # Step 3: Compute standardised mortality rate
-  std_rate <- data |>
-    left_join(p_nat, by = c("sex", "age")) |>
-    mutate(std_rate = (p_nat / p_nat_total) * !!sym(rte)) |>
-    group_by(group_id, year, sex) |>
-    summarise(std_mort_rate = sum(std_rate, na.rm = TRUE), .groups = "drop")
-  
-  return(std_rate)
+compute_std_mort_rate <- function(data, unit_col = "group_id", std_pop = NULL) {
+  .std_rate_by_unit(data, "mort_rate", "std_mort_rate", unit_col, std_pop,
+                    "compute_std_mort_rate")
 }
 
 #-------------------------------------------------------------------------------
@@ -118,7 +127,9 @@ compute_std_mort_rate <- function(data) {
 # `ref_year` was hardcoded to 2018 here and to 2023 in the national counterpart,
 # so the municipal and national rates plotted side by side in ch3_030 were
 # standardised to DIFFERENT populations. Both now default to 2020.
-compute_std_rate_age_gender <- function (data, ref_year = 2020, ...) {
+# `unit_col` mirrors compute_std_mort_rate(): "group_id" by default, "mun" for an
+# ungrouped baseline.
+compute_std_rate_age_gender <- function (data, ref_year = 2020, unit_col = "group_id", ...) {
   cns <- colnames(data)
   ctg <- ifelse("deaths" %in% cns, "deaths", "births")
   rte <- ifelse("deaths" %in% cns, "mort_rate", "fert_rate")
@@ -126,12 +137,12 @@ compute_std_rate_age_gender <- function (data, ref_year = 2020, ...) {
   data <- .drop_unstandardisable(data, rte, "compute_std_rate_age_gender")
   ref  <- .std_ref_pop(data, ref_year, "compute_std_rate_age_gender")
 
-  my_clmns <- c("group_id", "year", "age", "sex", ctg, "population", rte)
+  my_clmns <- c(unit_col, "year", "age", "sex", ctg, "population", rte)
   std_rate <- data %>% dplyr::select(all_of(my_clmns))
   std_rate <- std_rate %>% left_join(y = ref$p_nat, by = c("age", "sex"))
   std_rate <- std_rate %>% mutate(p_nat_total = ref$total)
   std_rate <- std_rate %>% mutate(std_rate = ((p_nat / p_nat_total) * get(rte)))
-  std_rate <- std_rate %>% group_by(group_id, age, sex, year) %>%
+  std_rate <- std_rate %>% group_by(across(all_of(c(unit_col, "age", "sex", "year")))) %>%
     summarise(std_rate = sum(std_rate, na.rm = TRUE), .groups = "drop")
 
   std_rate
@@ -174,34 +185,3 @@ range_0_1 <- function (x, ...) { (x - min(x)) / (max(x) - min(x)) }
 
 
 #-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-min_max_norm <- function(x) {
-  # TODO: check that reconstruction okay — original helper was not ported.
-  # Assumed to be standard min-max scaling to [0, 1].
-  rng <- range(x, na.rm = TRUE)
-  (x - rng[1]) / (rng[2] - rng[1])
-}
-
-#-------------------------------------------------------------------------------
-compute_std_rate <- function(data, ref_year = 2020) {
-  # TODO: check that reconstruction okay — original helper was not ported (the
-  # compute_std_rate in ch1_030 uses a different schema). Reconstructed as a
-  # direct age-sex standardisation of municipality death/birth rates to the
-  # national `ref_year` population. Returns one row per (mun, year) with column
-  # `std_mort_rate` (deaths) or `std_fert_rate` (births), matching plot_std_rate().
-  is_mort <- "deaths" %in% names(data)
-  cnt <- if (is_mort) "deaths" else "births"
-  out <- if (is_mort) "std_mort_rate" else "std_fert_rate"
-  ref <- data |>
-    dplyr::filter(year == ref_year) |>
-    dplyr::group_by(sex, age) |>
-    dplyr::summarise(ref_pop = sum(population, na.rm = TRUE), .groups = "drop")
-  tot_ref <- sum(ref$ref_pop, na.rm = TRUE)
-  data |>
-    dplyr::mutate(.rate = .data[[cnt]] / population) |>
-    dplyr::left_join(ref, by = c("sex", "age")) |>
-    dplyr::group_by(mun, year) |>
-    dplyr::summarise("{out}" := sum(.rate * ref_pop, na.rm = TRUE) / tot_ref,
-                     .groups = "drop")
-}

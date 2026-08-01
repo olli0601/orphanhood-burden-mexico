@@ -257,3 +257,102 @@ group_until_threshold_old <- function(mex_muni, threshold = 30000, max_iter = 50
 
 #-------------------------------------------------------------------------------
 
+# --- from R/municipality_grouping.R ---
+# Single-pass variant, never used by any script (its only call site in ch2_010
+# was commented out). Wrong on three counts: st_touches() adjacency leaves 655
+# of 2,457 GADM polygons with no neighbour; it merges into the HIGHEST-population
+# neighbour (which.max), the opposite of the documented rule; and being a single
+# non-iterative pass its output satisfies no threshold.
+group_small_municipalities <- function(mex_muni, threshold = 30000) {
+  library(sf)
+  library(dplyr)
+
+  muni_ref <- mex_muni %>%
+    mutate(
+      total_pop = ifelse(is.na(total_pop), 0, total_pop),
+      small = total_pop < threshold
+    ) %>%
+    st_make_valid()
+
+  # Get neighbors using spatial touches
+  neighbors <- sf::st_touches(muni_ref)
+
+  # Initialize group ID with municipality code
+  muni_ref$group_id <- muni_ref$mun
+
+  # Loop over small municipalities
+  small_indices <- which(muni_ref$small == TRUE)
+
+  for (i in small_indices) {
+    neighbors_i <- neighbors[[i]]
+
+    if (length(neighbors_i) == 0) next
+
+    pops <- muni_ref$total_pop[neighbors_i]
+
+    if (all(is.na(pops))) next
+
+    chosen <- neighbors_i[which.max(pops)]
+
+    muni_ref$group_id[i] <- muni_ref$group_id[chosen]
+  }
+
+  # Aggregate geometries and population by group_id
+  aggregated_muni <- muni_ref %>%
+    group_by(group_id) %>%
+    summarise(
+      geometry = st_union(geometry),
+      total_pop = sum(total_pop, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  return(aggregated_muni)
+}
+
+#-------------------------------------------------------------------------------
+
+# --- from R/rates.R (retired 2026-08) ---
+# Both were self-flagged as unverified reconstructions ("TODO: check that
+# reconstruction okay") and are no longer called by any script.
+#
+# compute_std_rate() was a THIRD standardisation scheme: it grouped by
+# (mun, year) only, collapsing SEX as well as age. For mortality that is
+# defensible; for fertility it summed the mother row and the father row of every
+# birth, so every municipal fertility rate it produced was a double count. It
+# also skipped .drop_unstandardisable() (10 of 82,212 rates came back Inf from
+# population == 0) and built its reference population with sum() over a frame
+# still multiplied by year_reg, distorting the weights. Replaced by
+# compute_std_mort_rate()/compute_std_fert_rate() with unit_col = "mun".
+#
+# min_max_norm() rescaled a column that never reached a figure.
+
+#-------------------------------------------------------------------------------
+min_max_norm <- function(x) {
+  # TODO: check that reconstruction okay — original helper was not ported.
+  # Assumed to be standard min-max scaling to [0, 1].
+  rng <- range(x, na.rm = TRUE)
+  (x - rng[1]) / (rng[2] - rng[1])
+}
+
+#-------------------------------------------------------------------------------
+compute_std_rate <- function(data, ref_year = 2020) {
+  # TODO: check that reconstruction okay — original helper was not ported (the
+  # compute_std_rate in ch1_030 uses a different schema). Reconstructed as a
+  # direct age-sex standardisation of municipality death/birth rates to the
+  # national `ref_year` population. Returns one row per (mun, year) with column
+  # `std_mort_rate` (deaths) or `std_fert_rate` (births), matching plot_std_rate().
+  is_mort <- "deaths" %in% names(data)
+  cnt <- if (is_mort) "deaths" else "births"
+  out <- if (is_mort) "std_mort_rate" else "std_fert_rate"
+  ref <- data |>
+    dplyr::filter(year == ref_year) |>
+    dplyr::group_by(sex, age) |>
+    dplyr::summarise(ref_pop = sum(population, na.rm = TRUE), .groups = "drop")
+  tot_ref <- sum(ref$ref_pop, na.rm = TRUE)
+  data |>
+    dplyr::mutate(.rate = .data[[cnt]] / population) |>
+    dplyr::left_join(ref, by = c("sex", "age")) |>
+    dplyr::group_by(mun, year) |>
+    dplyr::summarise("{out}" := sum(.rate * ref_pop, na.rm = TRUE) / tot_ref,
+                     .groups = "drop")
+}

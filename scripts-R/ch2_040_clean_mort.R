@@ -1,5 +1,5 @@
 # =============================================================================
-# ch2_040_clean_mort.R  ·  Chapter 1 — Mortality cleaning (original municipalities)
+# ch2_040_clean_mort.R  ·  Chapter 2 — Mortality cleaning (original municipalities)
 # Clean and harmonise the per-year INEGI registered-death files into death
 # counts by municipality x sex x 5-year age group x year; build the population
 # and geographic-lookup tables used downstream. Works at ORIGINAL-municipality
@@ -10,7 +10,9 @@
 # joins population (R/load_population) + IMM_2020 + the ch2 grouping.
 # Reads : input-data-processed/mortality datasets/*.RDS, grouped_municipality_50000.RDS (ch2),
 #         input-data-raw/population/...1_Grupo_Quinq..., input-data-raw/marginalization/IMM_2020.xls
-# Writes: input-data-processed/{mort.RDS, population.RDS, geo_info.RDS}
+# Writes: input-data-processed/mort.RDS
+#         (population.RDS / geo_info.RDS are NOT written here — see the notes
+#          at those objects; ch1_015 and ch2_060 own them)
 # Run after: ch1_015, ch2_010
 # =============================================================================
 
@@ -55,7 +57,11 @@ all_mort <- mort_panel
 data_summary <- all_mort %>%
   filter(year >= as.numeric(year_reg) - 20) %>%  # Keep only deaths in the last 20 years before registration
   group_by(year_reg, year) %>%
-  summarise(count = n(), .groups = "drop") %>%
+  # sum(deaths), not n(): n() counts PANEL ROWS, so a mun-sex-age cell holding
+  # 1 death weighed the same as one holding 5,000. Long-delay registrations are
+  # spread over many tiny cells, so counting rows inflated their apparent share
+  # and inverted the delay distribution these figures exist to show.
+  summarise(count = sum(deaths), .groups = "drop") %>%
   group_by(year_reg) %>%
   mutate(perc = count / sum(count) * 100) %>%
   ungroup()
@@ -85,7 +91,6 @@ p <- ggplot(data_summary, aes(x = factor(year_reg), y = count, fill = factor(yea
         legend.key.size = unit(0.3, "cm"),
         legend.box.spacing = unit(0.5, "cm"))
 
-print(p)
 ggsave(file.path(fig_dir, "ch2_040_reg_deaths_by_year.pdf"), p, width = 12, height = 8)
 
 # Convert the data to a proportion for pie charts
@@ -110,7 +115,6 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   theme(legend.title = element_text(size = 10), legend.text = element_text(size = 8)) +
   scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
-print(p_pie)
 ggsave(file.path(fig_dir, "ch2_040_death_year_dist_pie.pdf"), p_pie, width = 12, height = 8)
 
 # Combine the cleaned datasets together and aggregate counts in case of duplicate groups
@@ -131,7 +135,8 @@ deaths <- deaths |>
 # 1. Aggregate total deaths by occurrence year and reporting year
 deaths_summary <- deaths %>%
   group_by(year, year_reg) %>%
-  summarise(total_deaths = n(), .groups = "drop") %>%
+  # sum(deaths), not n() — see the note on data_summary above.
+  summarise(total_deaths = sum(deaths), .groups = "drop") %>%
   add_delay(max_delay = 5)
 
 
@@ -155,6 +160,10 @@ delay_levels <- levels(factor(deaths_summary$delay))
 # Generate colors and assign names
 library(Polychrome)
 seed_colors <- c("#FF0000", "#0000FF", "#00FF00")
+# Polychrome::createPalette is stochastic: without a seed the delay-figure colours
+# change on every run, so these figures were never reproducible. Verified by
+# running an unmodified script twice and diffing the output.
+set.seed(20250815)
 my_colors <- createPalette(length(delay_levels), seedcolors = seed_colors)
 names(my_colors) <- delay_levels
 
@@ -225,7 +234,13 @@ ggsave(file.path(fig_dir, "ch2_040_delay_pct_by_reg.pdf"), p_delay_pct_by_reg, w
 # Population
 population <- load_population(keep_child = FALSE)
 
-saveRDS(population, "input-data-processed/population.RDS")
+# NOT written to input-data-processed/population.RDS. ch1_015 already wrote a
+# byte-identical object from the same load_population(keep_child = FALSE) call,
+# and ch2_060 overwrites it again with a DIFFERENT one (keep_child = TRUE, i.e.
+# with the 0-4/5-9 bands Chapter 5 needs). Three writers meant the file's meaning
+# depended on which script ran last, with nothing on disk recording that — so
+# re-running ch2_040 alone silently reverted population.RDS to the age-restricted
+# vintage. This write was pure duplication and pure hazard.
 mort <- full_join(deaths |> select(mun, group_id, year, sex, age, year_reg, deaths, tot_deaths), population, by = c("mun", "year", "sex", "age"))
 
 mort$tot_deaths[is.na(mort$tot_deaths)] <- 0
@@ -248,14 +263,38 @@ im.tmp$mun <- as.factor(im.tmp$mun)
 im.tmp$IM <- as.numeric(im.tmp$IM)
 im.tmp$IMN <- as.numeric(im.tmp$IMN)
 
-mort <- mort |> full_join(im.tmp, by = c("mun")) 
+mort <- mort |> full_join(im.tmp, by = c("mun"))
 
 ##some municipalities don't have IM information (??)
 ##some municipalities have population of 0
 
 mort$mort_rate <- mort$deaths / mort$population
 
+# ⚠️ drop_na() here removes a LARGE and previously unreported share of deaths.
+# Measured on the current panel: 989,725 deaths, 8.85% of the 11.7M total.
+#
+#   926,155 (8.28%)  age band 80-84 — present in the deaths panel but absent
+#                    from the population table, because load_population() is
+#                    called above with keep_old = FALSE (which drops 80-84 and
+#                    85-mm). These deaths have no denominator, so every
+#                    age-standardised mortality rate in this script excludes
+#                    them. ONE-WORD FIX, but it changes every ch2_040 rate and
+#                    figure, so it is left for the researchers:
+#                    load_population(keep_child = FALSE, keep_old = TRUE).
+#    63,570 (0.57%)  age unknown (INEGI EDAD 4998/4999). These are deliberately
+#                    kept upstream as age = NA and genuinely cannot be
+#                    age-standardised — dropping them is correct, reporting
+#                    them is not optional.
+#
+# The full_join above is NOT the problem: it completes the grid with
+# population cells that have no deaths, and those are zero-filled a few lines
+# up, which is right for a rate panel.
+n_before <- nrow(mort); d_before <- sum(mort$deaths, na.rm = TRUE)
 mort <- mort |> drop_na()
+message(sprintf("ch2_040: drop_na() removed %s rows and %s deaths (%.2f%% of all deaths).",
+                format(n_before - nrow(mort), big.mark = ","),
+                format(round(d_before - sum(mort$deaths)), big.mark = ","),
+                100 * (d_before - sum(mort$deaths)) / d_before))
 
 
 saveRDS(mort, file = "input-data-processed/mort.RDS")
@@ -264,65 +303,80 @@ saveRDS(mort, file = "input-data-processed/mort.RDS")
 
 geo_info <- build_geo_info(index)
 
-
-saveRDS(geo_info, file = "input-data-processed/geo_info.RDS")
+# Also not written, for the same reason: ch1_015 writes an identical object
+# (same load_imm -> [-1, ] -> build_geo_info path), and ch2_060 later writes a
+# different one joined to group_id and filtered. ch2_050 reads geo_info.RDS
+# between here and there and now gets ch1_015's version, which is identical.
 
 #----------------------- Standardized mortality rate ---------------------------
-std_raw <- compute_std_rate(mort); std_raw <- std_raw %>% filter(year == 2023) %>% dplyr::select(-year)
-std_raw <- std_raw %>% left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% left_join(y = index, by = "mun") %>% mutate(capital = factor(capital))
-std_raw$overcrowding_pct <- min_max_norm(std_raw$overcrowding_pct)
-std_raw <- std_raw %>% rename("mpi"="IMN")
-std_raw$mpi <- as.numeric(std_raw$mpi)
+# Computed ONCE. This used to be recomputed on every one of the 34 loop
+# iterations below, plus twice more here and at the multi-year figure: measured
+# at 8.4 s per call, that was ~283 s of a ~300 s loop for a result that does not
+# depend on the loop variable. The only per-year part is filter(year == yr).
+# Aggregate over year_reg FIRST. `mort` carries one row per registration year
+# (1.11 rows per mun-year-sex-age), so standardising it directly would add each
+# age band's contribution once per year_reg.
+mort_mun <- mort %>%
+  group_by(mun, year, sex, age) %>%
+  summarise(deaths = sum(deaths), population = dplyr::first(population), .groups = "drop") %>%
+  mutate(mort_rate = deaths / population)
+
+# compute_std_mort_rate() rather than the retired compute_std_rate(): the latter
+# was an unverified reconstruction that skipped .drop_unstandardisable() (10 of
+# 82,212 rates came back Inf from population == 0) and built its reference
+# population with sum() over a frame still multiplied by year_reg. This helper is
+# the one ch2_020 and Chapter 3 use, and it reports what it drops.
+#
+# Summing the two sexes is the correct both-sex standardised death rate here:
+# p_nat_total spans both sexes, so the per-sex values are partial sums of one
+# rate. (For FERTILITY the same sum would double-count every birth — see ch2_050.)
+std_all <- compute_std_mort_rate(mort_mun, unit_col = "mun") %>%
+  group_by(mun, year) %>%
+  summarise(std_mort_rate = sum(std_mort_rate), .groups = "drop") %>%
+  left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>%
+  left_join(y = index, by = "mun") %>%
+  mutate(capital = factor(capital)) %>%
+  rename(mpi = IMN) %>%
+  mutate(mpi = as.numeric(mpi))
+
+std_raw <- std_all %>% filter(year == 2023) %>% dplyr::select(-year)
+# (removed) min_max_norm(overcrowding_pct) — plot_std_rate() reads only `mpi`
+# and `capital`, so this rescaled a column that never reaches a figure. It was
+# the sole live call to an unverified reconstruction; retired to old-R/.
 
 # ---------------------Plot mortality rate against mpi -------------------------
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (mortality)")
-print(p_raw_pts)
 ggsave(file.path(fig_dir, "ch2_040_std_rate_2023.pdf"), p_raw_pts, width = 8, height = 6)
 
 #------------------------ Iterate over the years -------------------------------
 years <- seq(1990, 2023, 1)
 
-# Initialize an empty list to store the plots
-plot_list <- list()
-
-# Loop over each year
 for (yr in years) {
-  std_raw <- compute_std_rate(mort); std_raw <- std_raw %>% filter(year == yr) %>% dplyr::select(-year)
-  std_raw <- std_raw %>% left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% left_join(y = index, by = "mun") %>% mutate(capital = factor(capital))
-  #std_raw$overcrowding_pct <- min_max_norm(std_raw$overcrowding_pct)
-  std_raw <- std_raw %>% rename("mpi"="IMN")
-  std_raw$mpi <- as.numeric(std_raw$mpi)
-  
-  p_raw_pts <- plot_std_rate(data = std_raw, tt= paste("Raw data (mortality) - Year", yr))
-  print(p_raw_pts)
+  std_yr <- std_all %>% filter(year == yr) %>% dplyr::select(-year)
+  p_raw_pts <- plot_std_rate(data = std_yr, tt = paste("Raw data (mortality) - Year", yr))
   ggsave(file.path(fig_dir, paste0("ch2_040_std_rate_", yr, ".pdf")), p_raw_pts, width = 8, height = 6)
 }
+# (removed) grid.arrange(grobs = plot_list, ...) — plot_list was initialised empty
+# and never appended to, so this emitted a blank page to the default device.
 
-# Arrange all the plots in a 3x6 grid (3 rows, 6 columns)
-grid.arrange(grobs = plot_list, nrow = 3, ncol = 3)
+std_raw_all <- std_all %>% filter(year %in% 2005:2023)
 
-
-
-std_raw_all <- compute_std_rate(mort) %>%
-  filter(year %in% 2005:2023) %>% 
-  left_join(geo_info[, c("mun", "capital")], by = "mun") %>% 
-  left_join(index, by = "mun") %>% 
-  mutate(capital = factor(capital)) %>%
-  rename(mpi = IMN) %>% 
-  mutate(mpi = as.numeric(mpi))
-
-
-p_raw_pts <- plot_std_rate(data = std_raw_all, tt = "Raw data (mortality) - Years 2012 to 2023") +
+# Title said "2012 to 2023"; the filter one line above is 2005:2023.
+p_raw_pts <- plot_std_rate(data = std_raw_all, tt = "Raw data (mortality) - Years 2005 to 2023") +
   facet_wrap(~ year)
 
-print(p_raw_pts)
 ggsave(file.path(fig_dir, "ch2_040_std_rate_multiyear.pdf"), p_raw_pts, width = 12, height = 8)
 #------------------------------------------------------------------------------
 ######
 #First: group by year, sex and age
 mort_national <- mort |> group_by(year, age, sex)|> summarise(deaths = sum(deaths), population = sum(population), .groups = "drop")
 mort_national <- mort_national |> 
-  filter(!(sex == "female" & age %in% c("65-69", "70-74", "75-79")))
+  # (removed) filter(!(sex == "female" & age %in% c("65-69","70-74","75-79")))
+  # That line is copy-pasted from ch2_050, where dropping female 65-79 is a
+  # reproductive-age cap. Here it deleted REAL female deaths at 65-79, leaving
+  # the female mortality curve truncated at 64 while the male curve ran to 79 —
+  # in a figure whose whole point is the male/female comparison.
+  identity()
 mort_national$mort_rate <- mort_national$deaths / mort_national$population
 
 mort_national <- mort_national |> drop_na()
@@ -366,7 +420,6 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
   )
 
 
-print(p)
 ggsave(file.path(fig_dir, "ch2_040_std_rate_age_sex.pdf"), p, width = 12, height = 8)
 
 

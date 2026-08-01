@@ -1,5 +1,5 @@
 # =============================================================================
-# ch2_050_clean_fert.R  ·  Chapter 1 — Fertility cleaning (original municipalities)
+# ch2_050_clean_fert.R  ·  Chapter 2 — Fertility cleaning (original municipalities)
 # Clean and harmonise the per-year INEGI registered-birth files into birth
 # counts by municipality x parent-sex x 5-year age group x year. Works at
 # ORIGINAL-municipality level and writes fert.RDS. The grouped-municipality
@@ -7,7 +7,7 @@
 #
 # Loads the supplied per-year fertility (input-data-processed/fertility datasets/),
 # joins population + IMM_2020 + geo_info.
-# Reads : input-data-processed/fertility datasets/*.RDS, geo_info.RDS (ch2_040),
+# Reads : input-data-processed/fertility datasets/*.RDS, geo_info_mun.RDS (ch1_015),
 #         input-data-raw/population/...1_Grupo_Quinq..., input-data-raw/marginalization/IMM_2020.xls
 # Writes: input-data-processed/fert.RDS (municipality level)
 # Run after: ch2_040
@@ -46,7 +46,9 @@ all_fert <- fert_panel
 data_summary_fert <- all_fert %>%
   filter(year >= as.numeric(year_reg) - 20) %>%  # Keep only deaths in the last 20 years before registration
   group_by(year_reg, year) %>%
-  summarise(count = n(), .groups = "drop") %>%
+  # sum(births), not n(): n() counted panel rows, giving a cell with 1 birth the
+  # same weight as one with 5,000 and distorting the delay distribution.
+  summarise(count = sum(births), .groups = "drop") %>%
   group_by(year_reg) %>%
   mutate(perc = count / sum(count) * 100) %>%
   ungroup()
@@ -76,7 +78,6 @@ p_pie <- ggplot(data_summary_pie, aes(x = "", y = perc, fill = factor(year))) +
   theme(legend.title = element_text(size = 10), legend.text = element_text(size = 8)) +
   scale_fill_manual(values = rainbow(length(unique(data_summary_pie$year))))
 
-print(p_pie)
 ggsave(file.path(fig_dir, "ch2_050_pie_birth_year_dist.pdf"), p_pie, width = 12, height = 8)
 
 # Combine and aggregate all available years (1985-2024).
@@ -173,69 +174,62 @@ fert <- fert |> full_join(im.tmp, by = c("mun")) |> dplyr::select(
 
 fert$fert_rate <- fert$births / fert$population
 
+# Same reporting as ch2_040: births with no matching population cell are removed
+# here, silently until now. See the note there — for fertility the age universe
+# is derived from the births panel itself a few lines up, so the loss should be
+# much smaller than mortality's 8.85%, but it was never checked.
+n_before <- nrow(fert); b_before <- sum(fert$births, na.rm = TRUE)
 fert <- fert |> drop_na()
+message(sprintf("ch2_050: drop_na() removed %s rows and %s births (%.2f%% of all births).",
+                format(n_before - nrow(fert), big.mark = ","),
+                format(round(b_before - sum(fert$births)), big.mark = ","),
+                100 * (b_before - sum(fert$births)) / b_before))
 
 
 saveRDS(fert, file = "input-data-processed/fert.RDS")
 
-geo_info <- readRDS("input-data-processed/geo_info.RDS")
+geo_info <- readRDS("input-data-processed/geo_info_mun.RDS")
 #-----------------------. Standardized fertility rate --------------------------
-std_raw <- compute_std_rate(fert); std_raw <- std_raw %>% filter(year == 2020) %>% dplyr::select(-year)
-std_raw <- std_raw %>% left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% left_join(y = index, by = "mun") %>% mutate(capital = factor(capital))
-std_raw <- std_raw %>% rename("mpi"="IMN")
-std_raw$mpi <- as.numeric(std_raw$mpi)
+# MOTHER ROWS ONLY. `sex` here is the PARENT's sex and every birth appears twice,
+# once on the mother's row and once on the father's. The retired
+# compute_std_rate() grouped by (mun, year) only, collapsing sex, so it summed
+# both rows: every published municipal fertility rate in this script was a
+# literal double count. Restricting to mothers also makes the standardisation
+# weights sum to 1 over the female bands, i.e. births per woman — the same thing
+# ch2_020 does, which is the reference implementation.
+fert_mothers <- fert %>% filter(sex == "female")
+
+std_all_fert <- compute_std_fert_rate(fert_mothers, unit_col = "mun") %>%
+  dplyr::select(mun, year, std_fert_rate) %>%
+  left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>%
+  left_join(y = index, by = "mun") %>%
+  mutate(capital = factor(capital)) %>%
+  rename(mpi = IMN) %>%
+  mutate(mpi = as.numeric(mpi))
+
+std_raw <- std_all_fert %>% filter(year == 2020) %>% dplyr::select(-year)
 
 #--------------------- Plot std fertility rate against mpi --------------------
 y_lim <- c(0, 0.15)
 p_raw_pts <- plot_std_rate(data = std_raw, tt = "Raw data (fertility)", y_lim = y_lim)
-print(p_raw_pts)
 ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_2020.pdf"), p_raw_pts, width = 8, height = 6)
 
 #--------------- Iterate over all the years considered ---------------------
-std_raw_all_fert <- compute_std_rate(fert) %>%
-  filter(year %in% 2005:2023) %>% 
-  left_join(geo_info[, c("mun", "capital")], by = "mun") %>% 
-  left_join(index, by = "mun") %>% 
-  mutate(capital = factor(capital)) %>%
-  rename(mpi = IMN) %>% 
-  mutate(mpi = as.numeric(mpi))
+std_raw_all_fert <- std_all_fert %>% filter(year %in% 2005:2023)
 
 
-p_raw_pts <- plot_std_rate(data = std_raw_all_fert, tt = "Raw data (fertility) - Years 2017 to 2023") +
+# Title said "2017 to 2023"; the filter two lines above is 2005:2023.
+p_raw_pts <- plot_std_rate(data = std_raw_all_fert, tt = "Raw data (fertility) - Years 2005 to 2023") +
   facet_wrap(~ year)
 
-print(p_raw_pts)
 ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_all_years.pdf"), p_raw_pts, width = 12, height = 8)
-# Get the unique years from the 'fert' dataset
-years <- unique(fert$year)
-
-# Loop over each year
-for (year in years) {
-  # Filter the dataset for the current year
-  std_raw <- compute_std_rate(fert) 
-  std_raw <- std_raw %>% 
-    filter(year == year) %>% 
-    dplyr::select(-year)
-  
-  # Merge with geo_info and index data, and convert 'capital' to a factor
-  std_raw <- std_raw %>% 
-    left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% 
-    left_join(y = index, by = "mun") %>% 
-    mutate(capital = factor(capital))
-  
-  # Rename and convert 'mpi' to numeric
-  std_raw <- std_raw %>% rename("mpi" = "IMN")
-  std_raw$mpi <- as.numeric(std_raw$mpi)
-  
-  # Set y-axis limits
-  y_lim <- c(0, 0.15)
-  
-  # Plot the data for the current year
-  p_raw_pts <- plot_std_rate(data = std_raw, tt = paste("Raw data (fertility) - Year", year), y_lim = y_lim)
-  
-  # Print the plot
-  print(p_raw_pts)
-}
+# (removed) a `for (year in years)` loop that produced nothing.
+# The loop variable shadowed the `year` COLUMN, so `filter(year == year)` was
+# TRUE for every row and the filter was a no-op: each iteration recomputed the
+# full 34-year compute_std_rate(fert) and plotted every year at once, under a
+# title naming a single year. Nothing was saved — the plots went to the default
+# device (Rplots.pdf), which had grown to 136 MB. The per-year fertility figures
+# that ARE saved come from the loop further down.
 
 
 
@@ -245,40 +239,9 @@ library(gridExtra)
 
 
 # Get the unique years sorted (from 2000 to 2023)
-years <- sort(unique(fert$year))
-
-# Create an empty list to store the plots
-plot_list <- list()
-
-# Loop over each year using a loop variable 'yr'
-for (yr in years) {
-  # Filter the fertility data for the current year
-  fert_year <- fert %>% filter(year == yr)
-  
-  # Compute the standardized rate for the current year's data
-  std_raw <- compute_std_rate(fert_year)
-  
-  # Remove the year column and merge with geo_info and index
-  std_raw <- std_raw %>% 
-    dplyr::select(-year) %>% 
-    left_join(geo_info[, c("mun", "capital")], by = "mun") %>% 
-    left_join(index, by = "mun") %>% 
-    mutate(capital = factor(capital))
-  
-  # Rename the MPI column and convert it to numeric
-  std_raw <- std_raw %>% rename(mpi = IMN)
-  std_raw$mpi <- as.numeric(std_raw$mpi)
-  
-  
-  # Create the plot for the current year
-  p <- plot_std_rate(data = std_raw, tt = paste("Raw data (fertility) - Year", yr), y_lim = y_lim)
-  
-  # Store the plot in the list
-  print(p)
-}
-
-# Arrange all the plots in a grid with 4 rows and 6 columns
-grid.arrange(grobs = plot_list, nrow = 4, ncol = 6)
+# (removed) a second print-only per-year loop. Its comment said "Store the plot
+# in the list", but the line under it was `print(p)` — plot_list stayed empty, so
+# the grid.arrange() that followed rendered a blank page. Nothing reached disk.
 
 
 ######
@@ -295,16 +258,12 @@ fert_national <- fert_national |> drop_na()
 std_age_sex <- compute_national_std_rate_age_gender(fert_national)
 std_age_sex <- std_age_sex %>% filter(year == 2023)
 
-p_std_mort_age <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
-  geom_line() +
-  geom_point()+
-  facet_wrap(~ sex, nrow = 1) +
-  labs(title = "Standardized Mortality Rate by Age Group",
-       x = "Age Group",
-       y = "Standardized Mortality Rate") +
-  theme_minimal()
-print(p_std_mort_age)
-ggsave(file.path(fig_dir, "ch2_050_std_mort_rate_age.pdf"), p_std_mort_age, width = 8, height = 6)
+# (removed) a duplicate of the fertility plot below, saved as
+# ch2_050_std_mort_rate_age.pdf with a "Standardized Mortality Rate" title and
+# axis label. This is the FERTILITY script and std_age_sex holds fertility
+# rates, so that file was the fertility series mislabelled as mortality. The
+# correctly labelled version is immediately below; the real mortality-by-age
+# figure is ch2_040_std_rate_age_2023.pdf.
 
 #Plot
 p_std_fert_age <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.factor(year), group = as.factor(year))) +
@@ -315,7 +274,6 @@ p_std_fert_age <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = as.fact
        x = "Age Group",
        y = "Standardized Fertility Rate") +
   theme_minimal()
-print(p_std_fert_age)
 ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_age.pdf"), p_std_fert_age, width = 8, height = 6)
 
 
@@ -340,49 +298,18 @@ p <- ggplot(std_age_sex, aes(x = age, y = std_rate, color = sex, group = sex)) +
   )
 
 
-print(p)
 ggsave(file.path(fig_dir, "ch2_050_std_fert_rate_age_sex.pdf"), p, width = 8, height = 6)
 
-years <- seq(2017, 2023, 1)
-
-
-# Loop over each year
-for (yr in years) {
-  std_raw <- compute_std_rate(fert); std_raw <- std_raw %>% filter(year == yr) %>% dplyr::select(-year)
-  std_raw <- std_raw %>% left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% left_join(y = index, by = "mun") %>% mutate(capital = factor(capital))
-  #std_raw$overcrowding_pct <- min_max_norm(std_raw$overcrowding_pct)
-  std_raw <- std_raw %>% rename("mpi"="IMN")
-  std_raw$mpi <- as.numeric(std_raw$mpi)
-  
-  p_raw_pts <- plot_std_rate(data = std_raw, tt= paste("Raw data (fertility) - Year", yr))
-  print(p_raw_pts)
-}
-
-
-library(readr)
-
-if (!file.exists("input-data-raw/marginalization/Indicadores_municipales_sabana_DA.csv")) {
-  message("ch2_050: skipping poverty-index (MPI) section — Indicadores_municipales_sabana_DA.csv not in input-data-raw/ (optional CONAPO file).")
-} else {
-Indicadores_municipales_sabana_DA <- read_csv("input-data-raw/marginalization/Indicadores_municipales_sabana_DA.csv")
-mpi <- Indicadores_municipales_sabana_DA %>% select(ent, nom_ent, mun, nom_mun, pobreza) %>% rename(mpi=pobreza)
-mpi <- mpi %>% mutate(mun= paste0(ent, mun))
-mpi <- mpi %>% mutate(mpi_norm =min_max_norm(mpi))
-
-
-for (yr in years) {
-  std_raw <- compute_std_rate(fert); std_raw <- std_raw %>% filter(year == yr) %>% dplyr::select(-year)
-  std_raw <- std_raw %>% left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>% left_join(y = index, by = "mun") %>% mutate(capital = factor(capital))
-  #std_raw$overcrowding_pct <- min_max_norm(std_raw$overcrowding_pct)
-  std_raw <- std_raw %>% rename("mpi"="IMN")
-  std_raw$mpi <- as.numeric(std_raw$mpi)
-  
-  p_raw_pts <- plot_std_rate(data = std_raw, tt= paste("Raw data (fertility) - Year", yr))
-  print(p_raw_pts)
-}
-
-library(readr)
-grupos_poblacionales_2020 <- read_csv("input-data-raw/grupos_poblacionales_2020.csv")
-}
+# (removed) a third print-only per-year loop (2017-2023), plus the entire
+# poverty-index (MPI) block that followed it.
+#
+# The MPI block was guarded on an optional CONAPO file that ch1_010 never
+# downloads, so it had never run — and nothing inside it was used even when it
+# did: `mpi`/`mpi_norm` were built and never referenced, its loop was an exact
+# copy of the one above it (also print-only), and `grupos_poblacionales_2020`
+# was read and never used. Deleted rather than repaired.
+#
+# The marginalization actually used by the pipeline comes from ch2_060
+# (index_grouped_mun.RDS), not from this file.
 
 

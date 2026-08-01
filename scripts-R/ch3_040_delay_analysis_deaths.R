@@ -91,6 +91,10 @@ delay_levels <- levels(factor(deaths_summary$delay))
 # Generate colors and assign names
 library(Polychrome)
 seed_colors <- c("#FF0000", "#0000FF", "#00FF00")
+# Polychrome::createPalette is stochastic: without a seed the delay-figure colours
+# change on every run, so these figures were never reproducible. Verified by
+# running an unmodified script twice and diffing the output.
+set.seed(20250815)
 my_colors <- createPalette(length(delay_levels), seedcolors = seed_colors)
 names(my_colors) <- delay_levels
 
@@ -215,8 +219,16 @@ municipality_summary <- delay_df_mpi |>
   group_by(group_id) |>
   summarise(
     avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE),
-    poverty_index = first(mpi)  # Assuming it's constant per municipality
+    # Was first(mpi), with the comment "assuming it's constant per municipality".
+    # It is not constant - mpi_imputed is interpolated per year - and, worse,
+    # mpi only covers 2010-2020 while this frame starts at 2005, so the first
+    # row of every group is a 2005 row and first() returned NA for all 777
+    # units. poverty_index was then entirely NA and the lm below had 0 cases.
+    # Averaged over the years where mpi is defined instead. If a single
+    # reference year is wanted instead, that is a choice to make deliberately.
+    poverty_index = mean(mpi, na.rm = TRUE)
   )
+stopifnot(sum(is.finite(municipality_summary$poverty_index)) > 0.9 * nrow(municipality_summary))
 
 p_delay_vs_poverty <- ggplot(municipality_summary, aes(x = poverty_index, y = avg_delay)) +
   geom_point(alpha = 0.7) +

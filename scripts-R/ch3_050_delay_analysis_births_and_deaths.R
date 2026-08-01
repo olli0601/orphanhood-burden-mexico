@@ -71,6 +71,10 @@ delay_levels <- levels(factor(deaths_summary$delay))
 # Generate colors and assign names
 library(Polychrome)
 seed_colors <- c("#FF0000", "#0000FF", "#00FF00")
+# Polychrome::createPalette is stochastic: without a seed the delay-figure colours
+# change on every run, so these figures were never reproducible. Verified by
+# running an unmodified script twice and diffing the output.
+set.seed(20250815)
 my_colors <- createPalette(length(delay_levels), seedcolors = seed_colors)
 names(my_colors) <- delay_levels
 
@@ -124,7 +128,7 @@ ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_registration.pdf"), p_deaths_
 
 
 # JOIN WITH THE MPI
-marg_index <- readRDS(file = "input-data-processed/marg_index.RDS")
+marg_index <- readRDS(file = "input-data-processed/index_grouped_mun.RDS")
 
 marg_index <- marg_index |>
   mutate(
@@ -229,6 +233,10 @@ delay_levels <- levels(factor(births_summary$delay))
 # Generate colors and assign names
 library(Polychrome)
 seed_colors <- c("#FF0000", "#0000FF", "#00FF00")
+# Polychrome::createPalette is stochastic: without a seed the delay-figure colours
+# change on every run, so these figures were never reproducible. Verified by
+# running an unmodified script twice and diffing the output.
+set.seed(20250815)
 my_colors <- createPalette(length(delay_levels), seedcolors = seed_colors)
 names(my_colors) <- delay_levels
 
@@ -281,7 +289,7 @@ ggsave(file.path(fig_dir, "ch3_050_births_delay_by_registration.pdf"), p_births_
 
 
 # JOIN WITH THE MPI
-marg_index <- readRDS(file = "input-data-processed/marg_index.RDS")
+marg_index <- readRDS(file = "input-data-processed/index_grouped_mun.RDS")
 
 marg_index <- marg_index |>
   mutate(

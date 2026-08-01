@@ -87,10 +87,31 @@ Run the following in this order in `VSCode` or using the `Terminal` via `pixi ru
 scripts-R/ch1_010_get_input_data_raw.R # download / locate raw inputs
 scripts-R/ch1_011_extract_raw_archives.R # extract .tar.zst (births/deaths) + births .zip
 scripts-R/ch1_012_build_year_panels.R # raw microdata -> per-year fert_YYYY/mort_YYYY panels
+scripts-R/ch1_020_verify_inputs.R    # verify all of the above in seconds (run this instead)
+```
 
+> **Chapter 1 is cached and does not need re-running.** `ch1_010`/`ch1_011` record a payload
+> manifest of every file they extract (`input-data-raw/.manifest/`), and `ch1_012` records the
+> row count and event total of every panel (`input-data-processed/.manifest/ch1_012.csv`).
+> Re-running skips anything that still matches: `ch1_011` goes from ~13 GB of re-extraction to
+> a directory scan (~3 s), `ch1_012` from ~11 min to ~8 s. Anything that has been deleted,
+> truncated or altered is detected and rebuilt — a plain `file.exists()` could not tell the
+> difference, which is how `natalidad_2017..2023` once reported "already extracted" while
+> holding only catalogue files.
+>
+> **Run `ch1_020_verify_inputs.R` instead of re-running the acquisition.** It re-checks the
+> archives, all 75 panels and the `ch1_015` artefacts against their manifests in seconds and
+> exits non-zero with a specific message if anything is wrong.
+>
+> To force work anyway: `ORPHAN_FORCE_DOWNLOAD=1`, `ORPHAN_FORCE_EXTRACT=1`,
+> `ORPHAN_FORCE_PANELS=1`. The manifests are derived, machine-local and gitignored, so a
+> fresh clone correctly extracts and builds everything on its first run.
+
+```bash
 # pipeline to prepare harmonised data panels:
 scripts-R/ch1_015_bootstrap_from_processed.R # per-year -> births/deaths/population/geo_info/marg_index
-scripts-R/ch2_010_group_mun.R # municipality aggregation (519 grouped units)
+scripts-R/ch2_010_group_mun.R # municipality aggregation (777 grouped units at the 50,000 threshold)
+scripts-R/ch2_020_grouping_diagnostics.R # threshold sweep: stability / sparsity / heterogeneity loss
 scripts-R/ch2_040_clean_mort.R # -> creates mort.RDS (original municipalities)
 scripts-R/ch2_050_clean_fert.R # -> creates fert.RDS (original municipalities)
 scripts-R/ch2_060_prepare_datasets.R # grouped-mun panels + marginalization + rural/urban
@@ -138,7 +159,10 @@ scripts-R/ch5_030_orphanhood_uncertainty.R   # credible intervals (co-monotone P
 All inputs are harmonized to a common municipality–sex–age–year resolution. Ages are
 grouped in five-year bands; municipality codes are standardized to a unified five-digit
 state+municipality format. Where event counts are sparse, adjacent municipalities are
-aggregated into 519 analytical units (each ≥50,000 inhabitants; see thesis Chapter 2).
+aggregated into 777 analytical units (each ≥50,000 inhabitants). The thesis (Section 2.5)
+reports 519; that figure is not reproducible and its companion statistics are internally
+inconsistent — see `docs/ch2_grouping_diagnostics.md`, which also documents the threshold
+sweep behind the 50,000 choice.
 
 ### Fertility — Registered births
 
@@ -211,9 +235,14 @@ So **2017–2024 can be pulled automatically**; **1985–2016 cannot** via a cle
 
 ### Municipal geometries
 
-- **Source:** GADM database v4.1 (`gadm41_MEX2.json`), with 2020 population counts.
-- **Use:** spatial aggregation of the original 2,457 level-2 municipalities into 519
+- **Source:** GADM database v4.1 (`gadm41_MEX2.json`). Geometry only — the 2020 population
+  counts the aggregation thresholds against come from the CONAPO quinquennial workbook.
+- **Use:** spatial aggregation of the original 2,457 level-2 municipalities into 777
   analytical units via iterative contiguity-based merging (sf/dplyr in R 4.4.0).
+- **Note:** GADM's polygons overlap by numerical slivers rather than sharing exact
+  boundaries, so `st_touches()` leaves 655 of them with no neighbour. Contiguity is built
+  with `st_intersects()` on geometry projected to EPSG:6372 with a 10 m snap; see
+  `build_contiguity()` in `R/municipality_grouping.R`.
 
 ### Manual raw archives (`.tar.zst`)
 

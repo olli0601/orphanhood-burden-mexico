@@ -61,6 +61,10 @@ delay_levels <- levels(factor(deaths_summary$delay))
 # Generate colors and assign names
 library(Polychrome)
 seed_colors <- c("#FF0000", "#0000FF", "#00FF00")
+# Polychrome::createPalette is stochastic: without a seed the delay-figure colours
+# change on every run, so these figures were never reproducible. Verified by
+# running an unmodified script twice and diffing the output.
+set.seed(20250815)
 my_colors <- createPalette(length(delay_levels), seedcolors = seed_colors)
 names(my_colors) <- delay_levels
 
@@ -150,7 +154,9 @@ saveRDS(deaths_grouped_mun, "input-data-processed/deaths_grouped_mun.RDS")
 #---------------------------------- GEO INFO ----------------------------------
 
 ################################################################################
-geo_info <- readRDS("input-data-processed/geo_info.RDS")
+# (removed) geo_info.RDS was read here and never used — this script works from
+# geo_info_grouped_mun.RDS. The read also made the script depend on which of
+# ch1_015 / ch2_060 had last written that name.
 geo_info_grouped_mun <- readRDS("input-data-processed/geo_info_grouped_mun.RDS")
 
 
@@ -183,7 +189,7 @@ saveRDS(mort, file = "input-data-processed/mort_by_grouped_mun.RDS")
 #------------------------------------- MPI -------------------------------------
 
 ################################################################################
-index_marg <- readRDS("input-data-processed/marg_index.RDS")
+index_marg <- readRDS("input-data-processed/index_grouped_mun.RDS")
 library(dplyr)
 library(tidyr)
 

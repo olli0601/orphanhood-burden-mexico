@@ -98,19 +98,18 @@ check_panels("mortality datasets", "mort", death_years, "deaths")
 # run. Check the schema and plausibility, and report which vintage this looks
 # like rather than pretending the name is unambiguous.
 note("== ch1_015 artefacts ==")
-# Each entry lists one or more ACCEPTABLE schemas. marg_index.RDS in particular
-# is two entirely different objects depending on the writer: ch1_015 stores the
-# municipality-level IMM table, ch2_060 overwrites it with a group-level,
-# year-interpolated, GM-classified index (and writes the same object again as
-# index_grouped_mun.RDS). Accept either and report which is on disk, rather than
-# pretending the filename determines the content.
+# These names now have exactly ONE writer each, so a single schema per name is
+# correct. Previously population.RDS / geo_info.RDS / marg_index.RDS were each
+# written by both ch1_015 and ch2_060 with different content, and this table had
+# to accept either — marg_index.RDS in particular was a municipal IMM table after
+# ch1_015 and a group-level interpolated index after ch2_060. ch2_060's versions
+# are now population_mun.RDS, geo_info_mun_grouped.RDS and index_grouped_mun.RDS.
 expect <- list(
-  births.RDS     = list(`ch1_015/ch2_060` = c("year", "sex", "age", "mun", "births", "year_reg")),
-  deaths.RDS     = list(`ch1_015/ch2_060` = c("year", "sex", "age", "mun", "deaths", "year_reg")),
-  population.RDS = list(`municipal`       = c("mun", "sex", "year", "age", "population")),
-  geo_info.RDS   = list(`municipal`       = c("state", "state_name", "mun", "mun_name", "capital")),
-  marg_index.RDS = list(`ch1_015 municipal IMM` = c("mun", "IMN", "GM"),
-                        `ch2_060 group-level`   = c("group_id", "year", "IMN", "GM")))
+  births.RDS               = list(`ch1_015` = c("year", "sex", "age", "mun", "births", "year_reg")),
+  deaths.RDS               = list(`ch1_015` = c("year", "sex", "age", "mun", "deaths", "year_reg")),
+  population_mun_adult.RDS = list(`ch1_015 municipal, 15-79` = c("mun", "sex", "year", "age", "population")),
+  geo_info_mun.RDS         = list(`ch1_015 municipal`        = c("state", "state_name", "mun", "mun_name", "capital")),
+  marg_index_mun.RDS       = list(`ch1_015 municipal IMM`    = c("mun", "IMN", "GM")))
 for (nm in names(expect)) {
   f <- file.path(proc, nm)
   if (!file.exists(f)) { fail("%s missing (run ch1_015)", nm); next }
@@ -118,26 +117,28 @@ for (nm in names(expect)) {
   if (is.null(d)) { fail("%s is unreadable", nm); next }
   hits <- vapply(expect[[nm]], function(cols) all(cols %in% names(d)), logical(1))
   if (!any(hits)) {
-    fail("%s matches no known schema. Has: %s. Expected one of: %s",
+    fail("%s matches no known schema. Has: %s. Expected: %s",
          nm, paste(names(d), collapse = ", "),
          paste(sprintf("%s (%s)", names(expect[[nm]]),
                        vapply(expect[[nm]], paste, character(1), collapse = "+")), collapse = " | "))
     next
   }
-  vintage <- names(expect[[nm]])[which(hits)[1]]
-  tag <- if (length(expect[[nm]]) > 1 || "group_id" %in% names(d))
-    sprintf("  [%s]", if ("group_id" %in% names(d) && vintage == "municipal")
-                        "ch2_060 vintage: carries group_id" else vintage) else ""
-  note("  [ok  ] %-16s %9s rows%s", nm, format(nrow(d), big.mark = ","), tag)
+  # One writer per name now, so an unexpected group_id column means something
+  # upstream has started overwriting a municipal artefact again.
+  if ("group_id" %in% names(d)) {
+    fail("%s carries a group_id column — a grouped artefact has been written over a municipal name", nm)
+    next
+  }
+  note("  [ok  ] %-24s %9s rows  [%s]", nm, format(nrow(d), big.mark = ","),
+       names(expect[[nm]])[which(hits)[1]])
 }
 
-pop <- tryCatch(readRDS(file.path(proc, "population.RDS")), error = function(e) NULL)
+pop <- tryCatch(readRDS(file.path(proc, "population_mun_adult.RDS")), error = function(e) NULL)
 if (!is.null(pop) && "population" %in% names(pop)) {
   p2020 <- sum(pop$population[pop$year == 2020], na.rm = TRUE)
-  # ch2_010 asserts >1.2e8 for the all-ages total. ch1_015 writes the adult-only
-  # vintage (keep_child = FALSE), so a lower total here is expected, not wrong.
-  note("  [info] population.RDS 2020 total: %s%s", format(round(p2020), big.mark = ","),
-       if (p2020 > 1.2e8) " (all ages)" else " (age-restricted vintage)")
+  # Adult bands only (15-79), so this is well below the ~127.8M all-ages total
+  # that ch2_010 asserts against the CONAPO workbook. Expected, not wrong.
+  note("  [info] population_mun_adult 2020 total (ages 15-79): %s", format(round(p2020), big.mark = ","))
 }
 
 # --- 5. the two distinct `99` sentinels ------------------------------------

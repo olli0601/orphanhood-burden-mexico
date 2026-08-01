@@ -34,7 +34,7 @@ deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS") |>
   filter(!age %in% 1:15)
 population <- readRDS("input-data-processed/population_grouped_mun.RDS")|>
   filter(!age %in% c("00-04", "05-09", "10-14"))
-marg_index <- readRDS("input-data-processed/marg_index.RDS")
+marg_index <- readRDS("input-data-processed/index_grouped_mun.RDS")
 # Urban/rural per grouped municipality (built in ch2_060 from IMM small_towns_pct).
 rural_urban <- readRDS("input-data-processed/rural_urban_area.RDS") |>
   dplyr::select(group_id, area_type)
