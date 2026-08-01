@@ -61,17 +61,32 @@ downloaded by a script (see the Data section below for the full description of e
 - **Provided, not downloadable** (no scriptable URL): INEGI registered-deaths and
   pre-2017 registered-births are committed under `input-data-raw/{births,deaths}/` as
   compressed `.tar.zst` archives (51 files, ~1.3 GB; no Git LFS — plain git, every file
-  < 100 MB). The default pipeline starts from the already-processed per-year datasets, so
-  `scripts-R/ch1_015_bootstrap_from_processed.R` runs out of the box once the
-  auto-downloadable files are retrieved — extracting these archives is only needed to
-  regenerate the per-year panels from raw (run `ch1_011`, see Data → *Manual raw archives*).
+  < 100 MB). These must be extracted (`ch1_011`) and preprocessed (`ch1_012`) — see below.
+
+**`input-data-processed/` starts empty.** Its contents are gitignored, so a fresh clone has
+no processed data at all: the per-year panels are built from the raw microdata by
+`scripts-R/ch1_012_build_year_panels.R`. Run `ch1_010` → `ch1_011` → `ch1_012` before
+anything else. (Historical note: these panels used to be committed and were removed in
+`e175806`; they remain recoverable from git history at `fe868db` if a cross-check against
+the original thesis inputs is ever needed.)
+
+> **Network note (CONAPO).** `conapo.segob.gob.mx` serves an incomplete TLS certificate
+> chain — it omits the *Go Daddy Secure Certificate Authority - G2* intermediate. macOS'
+> system `curl` masks this via Keychain, but R inside pixi validates against a root-only
+> CA bundle and fails with `SSL peer certificate or SSH remote key was not OK`, silently
+> skipping the population and marginalization downloads. `ch1_010` handles this itself:
+> it appends the published intermediate to a session-local copy of the CA bundle
+> (`.ensure_conapo_ca()`, built in `tempdir()`). Certificate verification stays fully
+> enabled. If you see `[WARN] CA bootstrap failed`, the CONAPO files will be missing and
+> the script now stops with an explicit list rather than exiting successfully.
 
 **1. Chapter 1–3 (Raw data → harmonised panels).** 
 Run the following in this order in `VSCode` or using the `Terminal` via `pixi run Rscript xxx`: 
 ```bash
-# run once to download data:
+# run once to acquire and preprocess the raw data:
 scripts-R/ch1_010_get_input_data_raw.R # download / locate raw inputs
-scripts-R/ch1_011_extract_raw_archives.R # extract manual .tar.zst (births/deaths) 
+scripts-R/ch1_011_extract_raw_archives.R # extract .tar.zst (births/deaths) + births .zip
+scripts-R/ch1_012_build_year_panels.R # raw microdata -> per-year fert_YYYY/mort_YYYY panels
 
 # pipeline to prepare harmonised data panels:
 scripts-R/ch1_015_bootstrap_from_processed.R # per-year -> births/deaths/population/geo_info/marg_index
@@ -210,6 +225,62 @@ to keep the repository small — ~28 % smaller than the original `.zip`, and no 
 - **Reproducible (any OS):** `pixi run Rscript scripts-R/ch1_011_extract_raw_archives.R`
   — uses the `zstd` CLI bundled by pixi + R's `untar()`, extracting each archive in place.
 
+`ch1_011` also extracts the INEGI births 2017–2023 `.zip` files downloaded by `ch1_010`
+(only their `conjunto_de_datos/` member; the ~180 `catalogos/` files are never read). It
+keys its skip check on the **microdata file**, not the target directory — `ch1_010`'s own
+`marker` check uses the directory, so a partially-extracted year would otherwise report
+`[skip] natalidad_2018 already extracted` forever while the microdata was absent.
+
+### Building the per-year panels (`ch1_012`)
+
+`scripts-R/ch1_012_build_year_panels.R` turns the raw microdata into the per-year panels the
+rest of the pipeline consumes, via `preprocess_fertility()` / `preprocess_mortality()`
+(`R/preprocess_fertility.R`, `R/preprocess_mortality.R`):
+
+```
+input-data-processed/fertility datasets/fert_<YYYY>.RDS   1985-2024  (40 files)
+input-data-processed/mortality datasets/mort_<YYYY>.RDS   1990-2024  (35 files)
+```
+
+Schema: `year, sex, age, mun, births|deaths, year_reg`. Each file holds the events
+**registered** in that year, so `year_reg` is the filename year while `year` is the year of
+**occurrence** and may be much earlier — that gap is the registration delay analysed in
+Chapters 3–4. The 1985–1997 births and 1990–1997 deaths files store the occurrence year as
+**two digits**; this is left as-is deliberately, because `load_year_panels()`
+(`R/load_year_panels.R`) converts it and drops the `99` sentinel at load time.
+
+Notes on sources:
+
+- **Births:** `NACIM<YY>.dbf` for 1985–2016, `natalidad_<YYYY>/conjunto_de_datos/*.csv` for
+  2017–2024. Paths are resolved from an explicit per-year table, not a glob: the birth
+  microdata sits in the same flat folder as catalogue DBFs (`ENTMUN.dbf`, `CATEMLN*.dbf`),
+  and INEGI filenames drift (`natalidad_<YYYY>` becomes `enr<YYYY>` in 2023).
+- **Deaths:** `DEFUN<YY>.dbf` for 1990–2019, CSV for 2020–2024. 2012–2019 exist in *both*
+  formats; the DBF is used so the whole 1990–2019 span comes from one consistent source.
+  Watch the naming drift here too — 2020 is `registrados` (masculine), 2023 has a `_csv`
+  infix before the extension, 2024 is `registradas24_csv.csv`. A naive glob over
+  `deaths/conjunto_de_datos/` would also match an 81 MB `..._bitacora_de_cambios.csv`.
+- Runtime is roughly 45–60 minutes (30+ DBFs and several 200 MB+ CSVs are read whole into
+  memory). Completed years are skipped on re-run; set `force <- TRUE` in the script to
+  rebuild. The script `stop()`s if any year is missing, rather than letting downstream
+  scripts produce silently partial results.
+
+**Validation against the original thesis inputs.** All 75 rebuilt panels were compared
+against Elsa's originals recovered from git (`fe868db`, verified byte-unchanged since her
+initial import):
+
+- **Fertility — all 40 years reproduce exactly** (identical row counts, totals and row sets).
+- **Mortality — all 35 years reproduce exactly on the age-banded rows** (zero differing rows
+  in either direction).
+
+Mortality *totals* differ by ~0.5–1.5%, confined entirely to the unknown-age `NA` bucket:
+the current `preprocess_mortality()` treats INEGI `EDAD` codes 1000–3999 as a *known* age 0
+(infants recorded in hours/days/months) and therefore outside the parental age range, where
+the original counted them as "unknown". `NA`-age rows are dropped downstream when joining on
+age band, so there is no effect on results — but note `correct_mortality_year()` carries a
+`TODO: original helper was not ported`, i.e. these helpers are a reimplementation rather than
+the thesis code.
+
 ### Reference / external estimates
 
 - Labour-force context (ENOE): <https://en.www.inegi.org.mx/programas/enoe/15ymas/>
@@ -218,9 +289,16 @@ to keep the repository small — ~28 % smaller than the original `.zip`, and no 
 ## Tested on
 
 The pipeline through the end of Chapter 3 (`ch1_010` → `ch3_020_clean_fertility_by_grouped_mun`)
-has been run end-to-end and verified on:
+has been run end-to-end **from the raw microdata**, on:
 
 - **OS:** macOS 26.3.1 (Darwin 25.3.0), Apple Silicon (`arm64`).
 - **R:** 4.5.3 (`aarch64-apple-darwin20`), managed via pixi (`pixi.toml`).
 
-Chapters 4–5 are not yet verified end-to-end. The environment is pixi-managed, so other platforms should work in principle, but only the above has been tested.
+Chapters 4–5 are not yet verified end-to-end. The environment is pixi-managed, so other
+platforms should work in principle, but only the above has been tested — note `pixi.toml`
+declares `platforms = ["osx-arm64"]` only, so `pixi install` will need that list extended
+before it solves on Linux or Windows.
+
+`pixi run setup` is **not** required for the current pipeline: it installs `cmdstanr`/`nimble`
+and compiles a CmdStan example, but no script in `scripts-R/` uses Stan or nimble (the GAM
+nowcast replaced them; `src/stan/` is orphaned). `pixi install` alone is sufficient.

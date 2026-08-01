@@ -29,12 +29,15 @@ preprocess_fertility <- function(file) {
       trim_ws = TRUE
     )
   } else {
-    # 1. Check the file type (CSV or DBF)
-    file_extension <- tools::file_ext(file)
-    
+    # 1. Check the file type (CSV or DBF). Lowercased: the raw INEGI tree mixes
+    #    cases (e.g. births NACIM16.DBF, deaths DEFUN99/13/15/18/19.DBF and the
+    #    2017-2023 deaths .CSV files), which would otherwise fall through to the
+    #    "Unsupported file type" stop() below.
+    file_extension <- tolower(tools::file_ext(file))
+
     if (file_extension == "csv") {
       # 1a. Read the CSV file
-      df <- read_csv(file) 
+      df <- read_csv(file)
     } else if (file_extension == "dbf") {
       # 1b. Read the DBF file
       library(foreign)
@@ -106,8 +109,8 @@ preprocess_fertility_long <- function(file) {
       trim_ws = TRUE
     )
   } else {
-    file_extension <- tools::file_ext(file)
-    
+    file_extension <- tolower(tools::file_ext(file))
+
     if (file_extension == "csv") {
       df <- read_csv(file)
     } else if (file_extension == "dbf") {
@@ -165,7 +168,7 @@ preprocess_fertility_day <- function(file) {
   if (!is.na(year) && year == "2017") {
     df <- readr::read_delim(file, delim = ";", escape_double = FALSE, trim_ws = TRUE)
   } else {
-    ext <- tools::file_ext(file)
+    ext <- tolower(tools::file_ext(file))
     if (ext == "csv") {
       df <- readr::read_csv(file)
     } else if (ext == "dbf") {
@@ -267,7 +270,7 @@ preprocess_fertility_month <- function(file) {
     readr::read_delim(file, delim = ";", escape_double = FALSE,
                       trim_ws = TRUE, show_col_types = FALSE)
   } else {
-    switch(tools::file_ext(file),
+    switch(tolower(tools::file_ext(file)),
            csv = readr::read_csv(file, show_col_types = FALSE),
            dbf = foreign::read.dbf(file, as.is = FALSE),
            stop("Unsupported file type – supply a CSV or DBF")

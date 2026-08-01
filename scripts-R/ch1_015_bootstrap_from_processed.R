@@ -14,18 +14,23 @@
 suppressMessages({
   library(dplyr); library(tidyr); library(stringr); library(readxl); library(purrr)
 source("R/load_population.R")
+source("R/load_year_panels.R")
 source("R/marginalization.R")
 })
 
 proc <- "input-data-processed"
 
 # --- 1. Combine supplied per-year files (original-municipality level) --------
+# Loading goes through load_year_panels(), the same helper ch2_040/ch2_050/ch2_060
+# use. This script used to inline its own version, which differed in one respect
+# that matters: it mapped the 2-digit occurrence year with 1900 + year for every
+# value, turning the `99` UNKNOWN-YEAR sentinel into a real occurrence year 1999.
+# That silently moved 28,346 deaths (registered 1990-1997) into 1999, where they
+# also implied a negative registration delay. load_year_panels() drops the
+# sentinel instead. Fertility is unaffected — no fert_* file carries a 99.
 load_years <- function(subdir, value_col) {
-  files <- list.files(file.path(proc, subdir), pattern = "[.]RDS$", full.names = TRUE)
-  stopifnot(length(files) > 0)
-  map_dfr(files, readRDS) |>
-    # early files (1985-1997) store occurrence year as 2 digits (e.g. 90); fix to 19xx
-    mutate(year = ifelse(year < 100, 1900L + as.integer(year), as.integer(year))) |>
+  load_year_panels(subdir, dir = proc) |>
+    mutate(year = as.integer(year), year_reg = as.integer(year_reg)) |>
     filter(year >= 1985 & year <= 2024) |>
     group_by(year, sex, age, mun, year_reg) |>
     summarise("{value_col}" := sum(.data[[value_col]]), .groups = "drop")

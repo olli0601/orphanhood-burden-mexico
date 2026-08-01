@@ -128,14 +128,22 @@ marg_index <- readRDS(file = "input-data-processed/marg_index.RDS")
 
 marg_index <- marg_index |>
   mutate(
-    marginalization_quintile = ntile(-as.numeric(IMN), 5),  
+    # IMN is INVERTED in this dataset: cross-checking against CONAPO's own GM
+    # labels gives mean IMN 0.72 for "Muy alto" (very high) marginalization and
+    # 0.92 for "Muy bajo" (very low), i.e. HIGHER IMN = LESS marginalized.
+    # ntile() assigns 1 to the smallest values, so ntile(IMN, 5) == 1 is the
+    # lowest IMN = the MOST marginalized fifth. The previous code negated IMN
+    # before ntile() and still labelled quintile 1 "Very High", which inverted
+    # every category.
+    marginalization_quintile = ntile(as.numeric(IMN), 5),
     mpi_label = case_when(
       marginalization_quintile == 1 ~ "Very High",
       marginalization_quintile == 2 ~ "High",
       marginalization_quintile == 3 ~ "Medium",
       marginalization_quintile == 4 ~ "Low",
       marginalization_quintile == 5 ~ "Very Low"
-    )
+    ),
+    mpi_label = factor(mpi_label, levels = c("Very Low", "Low", "Medium", "High", "Very High"))
   ) |>
   select(-c(GM, marginalization_quintile))
 
@@ -277,14 +285,22 @@ marg_index <- readRDS(file = "input-data-processed/marg_index.RDS")
 
 marg_index <- marg_index |>
   mutate(
-    marginalization_quintile = ntile(-as.numeric(IMN), 5),  
+    # IMN is INVERTED in this dataset: cross-checking against CONAPO's own GM
+    # labels gives mean IMN 0.72 for "Muy alto" (very high) marginalization and
+    # 0.92 for "Muy bajo" (very low), i.e. HIGHER IMN = LESS marginalized.
+    # ntile() assigns 1 to the smallest values, so ntile(IMN, 5) == 1 is the
+    # lowest IMN = the MOST marginalized fifth. The previous code negated IMN
+    # before ntile() and still labelled quintile 1 "Very High", which inverted
+    # every category.
+    marginalization_quintile = ntile(as.numeric(IMN), 5),
     mpi_label = case_when(
       marginalization_quintile == 1 ~ "Very High",
       marginalization_quintile == 2 ~ "High",
       marginalization_quintile == 3 ~ "Medium",
       marginalization_quintile == 4 ~ "Low",
       marginalization_quintile == 5 ~ "Very Low"
-    )
+    ),
+    mpi_label = factor(mpi_label, levels = c("Very Low", "Low", "Medium", "High", "Very High"))
   ) |>
   select(-c(GM, marginalization_quintile))
 

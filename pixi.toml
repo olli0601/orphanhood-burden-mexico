@@ -73,10 +73,23 @@ cmdstan = "==2.37.0"
 "r-polychrome" = "*"
 
 # ============================================================================
-# Single R-only environment
+# Optional Python environment for exploratory notebooks (`pixi run -e py ...`).
+# Kept in its own solve group so it cannot perturb the R environment.
 # ============================================================================
+[feature.py.dependencies]
+python = ">=3.11"
+jupyterlab = "*"
+pandas = "*"
+numpy = "*"
+pyarrow = "*"
+matplotlib = "*"
+geopandas = "*"
+mapclassify = "*"
+poppler = "*"          # pdftotext, for reading the thesis PDF
+
 [environments]
 default = { solve-group = "default" }
+py = { features = ["py"], no-default-feature = true }
 
 # ============================================================================
 # Tasks

@@ -4,11 +4,17 @@
 # that was previously duplicated across ch1_005 / ch2_040 / ch2_060.
 #   keep_child = FALSE  drop the 0-4 and 5-9 bands (adult panels: fertility/mortality)
 #   keep_child = TRUE   retain them (needed for child survival in Chapter 5)
+#   keep_old   = FALSE  drop the 80-84 and 85+ bands (no parental/child event data there)
+#   keep_old   = TRUE   retain them
+# keep_child = TRUE + keep_old = TRUE reproduces the workbook's POB_TOTAL column, i.e.
+# total population. That is what ch2_010 needs: the municipality-aggregation threshold
+# counts inhabitants, not the age range a particular panel is stratified by.
 # =============================================================================
-load_population <- function(keep_child = FALSE,
+load_population <- function(keep_child = FALSE, keep_old = FALSE,
                             path = "input-data-raw/population/00_Republica_mexicana/1_Grupo_Quinq_00_RM.xlsx") {
-  drop_age <- c("TOTAL", "85-mm", "80-84")
+  drop_age <- "TOTAL"
   if (!keep_child) drop_age <- c(drop_age, "00-04", "05-09")
+  if (!keep_old)   drop_age <- c(drop_age, "80-84", "85-mm")
   readxl::read_excel(path) |>
     dplyr::rename(mun = CLAVE, state = CLAVE_ENT, mun_name = NOM_MUN,
                   state_name = NOM_ENT, sex = SEXO, year = `AÑO`) |>

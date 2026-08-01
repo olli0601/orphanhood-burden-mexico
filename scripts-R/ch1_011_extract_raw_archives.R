@@ -47,3 +47,43 @@ if (length(archives) == 0) {
   }
   message("ch1_011: done. (Archives are kept; delete them manually if not needed.)")
 }
+
+# --- INEGI births 2017-2024 (.zip, downloaded by ch1_010) --------------------
+# ch1_010 downloads these and unzips them itself, but its skip condition is the
+# existence of the target DIRECTORY. A partial extraction therefore looks
+# "already done" forever, and re-running ch1_010 reports
+# "[skip] natalidad_2018 already extracted" while the microdata is absent.
+# (Observed: natalidad_2017..2023 held only catalogos/ files.)
+#
+# So repair them here, keyed on the actual MICRODATA FILE rather than the
+# directory. Only conjunto_de_datos/ is extracted — the catalogos/,
+# diccionario_de_datos/ and metadatos/ members are ~180 files the pipeline
+# never reads.
+births_zips <- list.files(file.path(raw_dir, "births"), pattern = "^natalidad_[0-9]{4}[.]zip$",
+                          full.names = TRUE)
+if (length(births_zips) > 0) {
+  message(sprintf("ch1_011: checking %d births .zip archive(s)...", length(births_zips)))
+  for (z in births_zips) {
+    yr   <- sub("^natalidad_([0-9]{4})[.]zip$", "\\1", basename(z))
+    dest <- file.path(raw_dir, "births", paste0("natalidad_", yr))
+    ok <- tryCatch({
+      entries <- utils::unzip(z, list = TRUE)$Name
+      # The microdata is the sole csv under conjunto_de_datos/; naming drifts
+      # between years (natalidad_<YYYY> up to 2022, enr<YYYY> from 2023).
+      want <- grep("conjunto_de_datos/.*[.]csv$", entries, ignore.case = TRUE, value = TRUE)
+      if (length(want) == 0) stop("no conjunto_de_datos/*.csv member found")
+      have <- file.path(dest, want)
+      if (all(file.exists(have)) && all(file.info(have)$size > 1e6)) {
+        message("  [skip] ", basename(z), " microdata already extracted")
+        TRUE
+      } else {
+        utils::unzip(z, files = want, exdir = dest)
+        if (!all(file.exists(file.path(dest, want)))) stop("extraction produced no file")
+        message(sprintf("  [ok  ] %s -> %s", basename(z), paste(basename(want), collapse = ", ")))
+        TRUE
+      }
+    }, error = function(e) {
+      message("  [FAIL] ", basename(z), " : ", conditionMessage(e)); FALSE
+    })
+  }
+}

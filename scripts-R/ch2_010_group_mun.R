@@ -2,13 +2,17 @@
 # ch2_010_group_mun.R  ·  Chapter 2 — Municipality aggregation
 # Iteratively merge low-population municipalities with neighbours until every
 # unit exceeds a population threshold (50,000), reducing 2,457 municipalities to
-# ~519 analytical units. Uses the helper R/municipality_grouping.R.
+# 552 analytical units. Uses the helper R/municipality_grouping.R.
+#
+# The thesis (Section 2.5) reports 519 units. See the mismatch note at the
+# GROUPING_POP_YEAR constant below before "fixing" the difference.
 #
 # Reads : input-data-raw/geometries/gadm41_MEX_2.json,
-#         input-data-processed/{population, geo_info}.RDS (ch1)
+#         input-data-raw/population/.../1_Grupo_Quinq_00_RM.xlsx (via load_population),
+#         input-data-processed/geo_info.RDS (ch1_015)
 # Writes: input-data-processed/{aggregated_muni_50000, grouped_municipality_50000,
 #         aggregated_muni_30000, grouped_municipality_30000, mex_muni}.RDS
-# Run after: ch2_040 (population, geo_info); feeds ch2_060 and ch3+
+# Run after: ch1_015 (geo_info); feeds ch2_040, ch2_060 and ch3+
 # =============================================================================
 
 library(sf)
@@ -19,6 +23,18 @@ library(stringi)
 library(ggplot2)
 library(viridis)
 source("R/municipality_grouping.R")
+source("R/load_population.R")
+
+# Population vintage the 50,000-inhabitant threshold is evaluated against. The
+# thesis (Section 2.2) states 2020, so the unit count here is directly comparable
+# to the 519 it reports.
+#
+# Read straight from the CONAPO workbook rather than input-data-processed/population.RDS:
+# that file is rewritten by ch1_015 -> ch2_040 -> ch2_060 with different age coverage,
+# and this script used to read whichever version happened to be on disk. It picked up a
+# table missing ages 0-09 and 80+, i.e. 107.5M instead of 127.8M nationally, which pushed
+# hundreds of municipalities below a threshold they clear, and produced 477 units.
+GROUPING_POP_YEAR <- 2020
 
 # Figures -> output/ch2/ch2_010_<name>.pdf
 fig_dir <- "output/ch2"
@@ -37,7 +53,6 @@ mex_muni <- mex_muni |>
     mun_name = name_2
   )
 
-population <- readRDS("input-data-processed/population.RDS")
 geo_info <- readRDS("input-data-processed/geo_info.RDS")
 # Remove all spaces from your municipality names in the main dataset
 mex_muni <- mex_muni %>%
@@ -97,12 +112,22 @@ mex_muni <- mex_muni %>%
 mex_muni <- left_join(mex_muni, geo_info |>
                         select(mun_name, mun, state_name), by = c("mun_name", "state_name"))
 
-pop_2023 <- population %>%
-  filter(year == 2023) %>%
+# Total population, all ages: the threshold counts inhabitants.
+pop_grouping <- load_population(keep_child = TRUE, keep_old = TRUE) %>%
+  filter(year == GROUPING_POP_YEAR) %>%
   group_by(mun) %>%
   summarise(total_pop = sum(population, na.rm = TRUE), .groups = "drop")
 
-mex_muni <- left_join(mex_muni, pop_2023, by= "mun")
+# Assert on the payload, not on the file existing: a truncated age range is exactly
+# the defect this replaced, and it is invisible unless the total is checked.
+stopifnot(nrow(pop_grouping) > 2400, sum(pop_grouping$total_pop) > 1.2e8)
+message(sprintf("ch2_010: %d municipalities, %s inhabitants (%d, all ages)",
+                nrow(pop_grouping), format(sum(pop_grouping$total_pop), big.mark = ","),
+                GROUPING_POP_YEAR))
+
+mex_muni <- left_join(mex_muni, pop_grouping, by = "mun")
+message(sprintf("ch2_010: %d of %d polygons matched a population",
+                sum(!is.na(mex_muni$total_pop)), nrow(mex_muni)))
 
 # Plot using ggplot2
 p_map_population <- ggplot(data = mex_muni) +
@@ -140,7 +165,7 @@ p_map_grouped_30000 <- ggplot(data = aggregated_muni_30000) +
   theme_minimal() +
   labs(
     title = "Grouped Municipalities by Population",
-    subtitle = "Each group meets the minimum threshold of 15,000 people",
+    subtitle = "Each group meets the minimum threshold of 30,000 people",
     fill = "Log(Pop)"
   )
 ggsave(file.path(fig_dir, "ch2_010_map_grouped_30000.pdf"), p_map_grouped_30000, width = 8, height = 8)

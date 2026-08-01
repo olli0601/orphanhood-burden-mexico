@@ -48,6 +48,68 @@ for (d in dirs) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 # Bump the timeout: some of these files are tens of MB on slow mirrors.
 options(timeout = max(1200, getOption("timeout")))
 
+# --- TLS: complete the CONAPO certificate chain ------------------------------
+# conapo.segob.gob.mx (population + marginalization) serves ONLY its leaf
+# certificate (CN=*.segob.gob.mx) and omits the intermediate
+# "Go Daddy Secure Certificate Authority - G2". macOS' system curl hides this
+# (Keychain has the intermediate and does AIA fetching), but the conda/pixi CA
+# bundle is root-only, so R's download.file() aborts with
+#   "SSL peer certificate or SSH remote key was not OK"
+# and every CONAPO file silently ends up as [FAIL] while the script exits 0.
+#
+# Fix: append the published intermediate to a session-local copy of the CA
+# bundle and point libcurl at it. Certificate verification stays FULLY enabled —
+# we are supplying a missing link in the chain, not disabling any check. The
+# intermediate is fetched from certs.godaddy.com, which has a complete chain of
+# its own (so this download works before the fix is in place).
+#
+# Built in tempdir() rather than committed: it is a derived artefact, and the
+# intermediate expires 2031-05-03, which would rot silently in version control.
+.ensure_conapo_ca <- function() {
+  base <- Sys.getenv("CURL_CA_BUNDLE")
+  if (!nzchar(base) || !file.exists(base)) {
+    cand <- c(file.path(Sys.getenv("CONDA_PREFIX"), "ssl", "cacert.pem"),
+              file.path(R.home(), "..", "..", "ssl", "cacert.pem"),
+              ".pixi/envs/default/ssl/cacert.pem")
+    cand <- cand[nzchar(cand) & file.exists(cand)]
+    base <- if (length(cand)) cand[[1]] else ""
+  }
+  if (!nzchar(base)) {
+    message("  [WARN] no CA bundle found - leaving TLS config untouched; ",
+            "CONAPO downloads may fail.")
+    return(invisible(FALSE))
+  }
+  out <- file.path(tempdir(), "cacert-conapo.pem")
+  if (file.exists(out) && identical(Sys.getenv("CURL_CA_BUNDLE"), out)) {
+    return(invisible(TRUE))  # already bootstrapped this session
+  }
+  ok <- tryCatch({
+    itm <- file.path(tempdir(), "gdig2.crt.pem")
+    download.file("https://certs.godaddy.com/repository/gdig2.crt.pem",
+                  itm, mode = "wb", quiet = TRUE)
+    # A login/error page instead of a certificate would be far larger, and must
+    # not be concatenated into the trust bundle.
+    txt <- readLines(itm, warn = FALSE)
+    if (!any(grepl("^-----BEGIN CERTIFICATE-----", txt))) {
+      stop("fetched intermediate is not PEM (got ", length(txt), " lines)")
+    }
+    writeLines(c(readLines(base, warn = FALSE), txt), out)
+    TRUE
+  }, error = function(e) {
+    message("  [WARN] CA bootstrap failed (", conditionMessage(e), ") - ",
+            "CONAPO downloads may fail.")
+    FALSE
+  })
+  if (ok) {
+    Sys.setenv(CURL_CA_BUNDLE = out)
+    message("  [ca  ] CONAPO chain completed via ", basename(out))
+  }
+  invisible(ok)
+}
+
+message("== TLS setup (CONAPO chain) ==")
+.ensure_conapo_ca()
+
 # --- helper ----------------------------------------------------------------
 
 # Download `url` to `dest`. Skips if already present, warns (does not abort) on
@@ -281,5 +343,41 @@ fetch(
   marker = file.path(dirs["geometries"], "gadm41_MEX_2.json")
 )
 
+# ===========================================================================
+# 6. Verify the auto-downloaded files later chapters actually require
+# ===========================================================================
+# fetch() reports failures with message() and returns FALSE rather than
+# aborting, so a dead link or TLS problem would otherwise leave this script
+# exiting 0 with missing data - only surfacing much later as a confusing error
+# inside ch1_015 / ch2_010. Fail loudly here instead.
+message("== required auto-downloaded files ==")
+required <- c(
+  "population (CONAPO quinquennial)" =
+    file.path(dirs["population"], "00_Republica_mexicana", "1_Grupo_Quinq_00_RM.xlsx"),
+  "marginalization IMM 2020" = file.path(dirs["marginalization"], "IMM_2020.xls"),
+  "marginalization IMM 2015" = file.path(dirs["marginalization"], "IMM_DP2_2015.xlsx"),
+  "marginalization IMM 2010" = file.path(dirs["marginalization"], "IMM_DP2_2010.xlsx"),
+  "GADM geometries"          = file.path(dirs["geometries"], "gadm41_MEX_2.json")
+)
+missing_required <- character(0)
+for (lbl in names(required)) {
+  f <- required[[lbl]]
+  # Size guard as well as existence: a dead link or captive portal yields a
+  # small HTML stub, which would pass a bare file.exists() check.
+  if (file.exists(f) && file.info(f)$size > 10000) {
+    message(sprintf("  [ok  ] %s (%.1f MB)", lbl, file.info(f)$size / 1024^2))
+  } else {
+    message(sprintf("  [MISS] %s -> %s", lbl, f))
+    missing_required <- c(missing_required, lbl)
+  }
+}
+
 message("\nDone. Files written under '", raw_dir, "/'.")
 message("If any INEGI section was skipped, set the URL vectors near the top and re-run.")
+
+if (length(missing_required) > 0) {
+  stop(sprintf(
+    "%d required auto-downloaded file(s) missing: %s.\nThe pipeline cannot start without these (ch1_015 needs the population workbook and IMM_2020.xls). Check the [FAIL]/[WARN] lines above and re-run.",
+    length(missing_required), paste(missing_required, collapse = "; ")
+  ), call. = FALSE)
+}

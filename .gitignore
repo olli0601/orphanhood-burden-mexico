@@ -5,6 +5,7 @@
 #   WARNING: some are very large (>100 MB; e.g. the deaths bundles). Plain GitHub
 #   rejects files >100 MB — use Git LFS or a non-GitHub remote before committing
 #   these (see README). Nothing here is auto-committed.
+input-data-raw/
 input-data-raw/population/
 input-data-raw/marginalization/
 input-data-raw/geometries/
@@ -36,3 +37,6 @@ pixi.lock
 # via a tracked .gitkeep.
 input-data-processed/*
 !input-data-processed/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/

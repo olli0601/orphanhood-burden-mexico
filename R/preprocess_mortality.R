@@ -3,9 +3,12 @@
 # =============================================================================
 
 preprocess_mortality <- function(file) {
-  # 1. Check the file type (CSV or DBF)
-  file_extension <- tools::file_ext(file)
-  
+  # 1. Check the file type (CSV or DBF). Lowercased: the raw INEGI tree mixes
+  #    cases (DEFUN99/13/15/18/19.DBF, and the 2017-2019/2022-2023 .CSV files),
+  #    which would otherwise hit the "Unsupported file type" stop() below.
+  file_extension <- tolower(tools::file_ext(file))
+
+
   if (file_extension == "csv") {
     # 1a. Read the CSV file
     df <- read_csv(file) |>
@@ -102,8 +105,8 @@ preprocess_mortality <- function(file) {
 
 #-------------------------------------------------------------------------------
 preprocess_mortality_long <- function(file) {
-  # ── 1. Read CSV or DBF ──────────────────────────────────────────────────
-  file_extension <- tools::file_ext(file)
+  # ── 1. Read CSV or DBF (extension lowercased — see preprocess_mortality) ─
+  file_extension <- tolower(tools::file_ext(file))
   
   if (file_extension == "csv") {
     df <- readr::read_csv(file, show_col_types = FALSE) |>
