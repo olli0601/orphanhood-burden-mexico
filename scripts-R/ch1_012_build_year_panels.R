@@ -31,6 +31,7 @@ suppressMessages({
   library(dplyr); library(readr); library(stringr); library(tidyr); library(foreign)
   source("R/preprocess_fertility.R")
   source("R/preprocess_mortality.R")
+  source("R/manifest.R")
 })
 
 raw  <- "input-data-raw"
@@ -40,7 +41,17 @@ mort_dir <- file.path(proc, "mortality datasets")
 dir.create(fert_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(mort_dir, recursive = TRUE, showWarnings = FALSE)
 
-force <- FALSE   # TRUE = rebuild years whose .RDS already exists
+# Rebuild every year regardless of the manifest: ORPHAN_FORCE_PANELS=1.
+# This used to be a hardcoded constant, so forcing a rebuild meant editing the
+# script - and editing a script mid-run is how ch3_040 ended up executing out of
+# order during the 2026-08-01 rebuild.
+force <- env_flag("ORPHAN_FORCE_PANELS")
+
+# Per-year payload manifest: (id, rows, total). A panel is trusted only when it
+# exists AND matches its recorded row count and event total. The previous check
+# was `file.exists(out)`, which trusts a file truncated by an interrupted
+# saveRDS forever and then silently under-counts downstream.
+manifest_file <- file.path(proc, ".manifest", "ch1_012.csv")
 
 # --- path resolution --------------------------------------------------------
 # Resolved per year from explicit rules rather than a recursive glob, because:
@@ -108,11 +119,34 @@ deaths_path <- function(y) {
 # matches the schema load_year_panels() and ch1_015 expect:
 #   year, sex, age, mun, births|deaths, year_reg
 build_panel <- function(y, resolver, preprocess, out_dir, prefix, value_col) {
-  out <- file.path(out_dir, sprintf("%s_%d.RDS", prefix, y))
+  id  <- sprintf("%s_%d", prefix, y)
+  out <- file.path(out_dir, sprintf("%s.RDS", id))
+
+  # Verify the payload, not the filename. Re-reading the RDS costs a fraction of
+  # a second against the 13-15 s it takes to rebuild a fertility year.
   if (file.exists(out) && !force) {
-    message(sprintf("  [skip] %s_%d already built", prefix, y))
-    return(invisible(NA_integer_))
+    rec <- table_manifest_get(manifest_file, id)
+    if (is.null(rec)) {
+      message(sprintf("  [redo] %s : no manifest entry", id))
+    } else {
+      chk <- tryCatch({
+        d <- readRDS(out)
+        if (nrow(d) == rec$rows && isTRUE(all.equal(sum(d[[value_col]], na.rm = TRUE), rec$total))) {
+          "ok"
+        } else {
+          sprintf("expected %d rows / %s %s, found %d / %s",
+                  rec$rows, format(rec$total, big.mark = ","), value_col,
+                  nrow(d), format(sum(d[[value_col]], na.rm = TRUE), big.mark = ","))
+        }
+      }, error = function(e) paste("unreadable:", conditionMessage(e)))
+      if (identical(chk, "ok")) {
+        message(sprintf("  [skip] %s verified (%s rows)", id, format(rec$rows, big.mark = ",")))
+        return(invisible(rec$total))
+      }
+      message(sprintf("  [redo] %s : %s", id, chk))
+    }
   }
+
   f <- resolver(y)
   if (is.na(f)) {
     message(sprintf("  [MISS] %d : no raw microdata file found", y))
@@ -123,8 +157,9 @@ build_panel <- function(y, resolver, preprocess, out_dir, prefix, value_col) {
     d$year_reg <- y
     saveRDS(d, out)
     n <- sum(d[[value_col]], na.rm = TRUE)
-    message(sprintf("  [ok  ] %s_%d  %7d rows  %9d %s  <- %s",
-                    prefix, y, nrow(d), n, value_col, basename(f)))
+    table_manifest_upsert(manifest_file, id, nrow(d), n)
+    message(sprintf("  [ok  ] %s  %7d rows  %9d %s  <- %s",
+                    id, nrow(d), n, value_col, basename(f)))
     n
   }, error = function(e) {
     message(sprintf("  [FAIL] %d (%s) : %s", y, basename(f), conditionMessage(e)))

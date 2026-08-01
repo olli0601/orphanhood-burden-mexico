@@ -31,6 +31,7 @@
 # ---------------------------------------------------------------------------
 
 suppressMessages(library(tools))
+source("R/manifest.R")
 
 # --- configuration ---------------------------------------------------------
 
@@ -117,16 +118,35 @@ message("== TLS setup (CONAPO chain) ==")
 # for URLs that do not resolve, so a tiny "success" usually means a dead link).
 #
 # If `unzip = TRUE`, the downloaded archive is extracted into `exdir` (default:
-# the directory holding `dest`) and the .zip is deleted afterwards. Pass
-# `marker` (a file or directory that exists only once extraction succeeded) so
-# re-runs skip the whole download+unzip step instead of re-fetching the zip.
+# the directory holding `dest`) and the .zip is deleted afterwards.
+#
+# Re-run skipping is decided from a PAYLOAD MANIFEST (R/manifest.R), not from
+# `marker`. `marker` was usually a directory, and a directory left behind by a
+# half-finished unzip satisfied file.exists() forever: that is how
+# natalidad_2017..2023 came to report "[skip] already extracted" while holding
+# only catalogos/ files, which ch1_011 then had to repair (see its comment at
+# the births .zip loop). `marker` is retained only as the manifest key.
+# `only` (a regex) extracts just the matching members. The INEGI vital-stats
+# zips ship ~180 catalogue files per year that no pipeline step reads, and one
+# of them is named `catalogos/año_nacimiento.csv`: utils::unzip() aborts on that
+# non-UTF8 filename with "Illegal byte sequence", leaving a partial extraction.
+# The old directory-existence skip then declared the year done forever. Passing
+# `only` sidesteps the bad member entirely - the same approach ch1_011's repair
+# loop already takes.
 fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
-                  exdir = NULL, marker = NULL) {
-  if (!is.null(marker) && file.exists(marker)) {
-    message(sprintf("  [skip] %s already extracted", basename(marker)))
-    return(invisible(TRUE))
+                  exdir = NULL, marker = NULL, only = NULL) {
+  force_dl <- env_flag("ORPHAN_FORCE_DOWNLOAD")
+  if (unzip && !is.null(marker) && !force_dl) {
+    chk <- manifest_check(marker, raw_dir)
+    if (chk$ok) {
+      message(sprintf("  [skip] %s (%d members verified)", basename(marker), chk$n))
+      return(invisible(TRUE))
+    }
+    if (chk$reason != "no manifest") {
+      message(sprintf("  [redo] %s : %s", basename(marker), chk$reason))
+    }
   }
-  if (!unzip && file.exists(dest) && file.info(dest)$size > min_bytes) {
+  if (!unzip && file.exists(dest) && file.info(dest)$size > min_bytes && !force_dl) {
     message(sprintf("  [skip] %s already present", basename(dest)))
     return(invisible(TRUE))
   }
@@ -151,19 +171,35 @@ fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
   if (ok && unzip) {
     if (is.null(exdir)) exdir <- dirname(dest)
     dir.create(exdir, recursive = TRUE, showWarnings = FALSE)
-    done <- tryCatch(
+    members <- tryCatch(
       {
-        utils::unzip(dest, exdir = exdir)
-        TRUE
+        want <- NULL
+        if (!is.null(only)) {
+          entries <- utils::unzip(dest, list = TRUE)$Name
+          want <- grep(only, entries, ignore.case = TRUE, value = TRUE)
+          if (!length(want)) stop("no member matched /", only, "/")
+        }
+        if (is.null(want)) utils::unzip(dest, exdir = exdir)
+        else               utils::unzip(dest, files = want, exdir = exdir)
       },
       error = function(e) {
         message(sprintf("  [FAIL] unzip %s : %s", basename(dest), conditionMessage(e)))
-        FALSE
+        character()
       }
     )
-    if (done) {
+    if (length(members)) {
+      # Record what actually landed, so the next run verifies the payload
+      # instead of trusting that a directory exists.
+      if (!is.null(marker)) {
+        rel <- sub(paste0("^", normalizePath(raw_dir, mustWork = FALSE), "/?"), "",
+                   normalizePath(members, mustWork = FALSE))
+        rel <- sub(paste0("^", raw_dir, "/?"), "", rel)
+        tryCatch(manifest_write(marker, rel, raw_dir),
+                 error = function(e) message("  [WARN] manifest: ", conditionMessage(e)))
+      }
       file.remove(dest)
-      message(sprintf("  [unzip] -> %s/ (removed %s)", basename(exdir), basename(dest)))
+      message(sprintf("  [unzip] -> %s/ (%d members, removed %s)",
+                      basename(exdir), length(members), basename(dest)))
     }
   }
   invisible(ok)
@@ -219,7 +255,8 @@ if (length(inegi_births_urls) == 0) {
   for (yr in names(inegi_births_urls)) {
     u <- inegi_births_urls[[yr]]
     out <- file.path(dirs["births"], sprintf("natalidad_%s", yr))
-    fetch(u, paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out)
+    fetch(u, paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out,
+          only = "conjunto_de_datos/.*[.]csv$")
   }
 }
 
@@ -230,7 +267,8 @@ if (length(inegi_deaths_urls) == 0) {
   for (yr in names(inegi_deaths_urls)) {
     u <- inegi_deaths_urls[[yr]]
     out <- file.path(dirs["deaths"], sprintf("defunciones_%s", yr))
-    fetch(u, paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out)
+    fetch(u, paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out,
+          only = "conjunto_de_datos/.*[.]csv$")
   }
 }
 
@@ -334,7 +372,7 @@ fetch(
 # ===========================================================================
 # 5. GADM - municipal geometries (v4.1, ADM level 2)
 # ===========================================================================
-# Used to aggregate the 2,457 municipalities into the 519 analytical units.
+# Used to aggregate the 2,457 municipalities into the analytical units.
 message("== GADM geometries ==")
 fetch(
   "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_MEX_2.json.zip",

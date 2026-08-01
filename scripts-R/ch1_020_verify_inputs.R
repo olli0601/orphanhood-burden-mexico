@@ -1,0 +1,168 @@
+# =============================================================================
+# ch1_020_verify_inputs.R  ·  Chapter 1 — Verify the acquired inputs
+#
+# Run this INSTEAD of re-running Chapter 1. It re-checks, in a few seconds,
+# everything ch1_010/011/012/015 were supposed to produce, and exits non-zero
+# with a specific message if anything is missing, truncated or inconsistent.
+#
+# It exists because the alternative — "the files are there, so it must be
+# fine" — is precisely the reasoning that has failed repeatedly in this project:
+# natalidad_2017..2023 reported "[skip] already extracted" while holding only
+# catalogue files, and ch1_012 skipped panels on filename alone. Every check
+# below inspects the payload (row counts, event totals, recorded member sizes),
+# never just a path.
+#
+# Reads : input-data-raw/.manifest/*.tsv, input-data-processed/.manifest/ch1_012.csv,
+#         the per-year panels, and the ch1_015 artefacts
+# Writes: nothing
+# Run after: ch1_012 (or any time you want to trust the inputs without rebuilding)
+# =============================================================================
+
+suppressMessages({ library(dplyr); source("R/manifest.R") })
+
+raw  <- "input-data-raw"
+proc <- "input-data-processed"
+fails <- character()
+note  <- function(fmt, ...) message(sprintf(fmt, ...))
+fail  <- function(fmt, ...) { m <- sprintf(fmt, ...); fails <<- c(fails, m); message("  [FAIL] ", m) }
+
+# --- 1. raw archives --------------------------------------------------------
+note("== raw archives (.tar.zst) ==")
+archives <- list.files(raw, pattern = "[.]tar[.]zst$", recursive = TRUE, full.names = TRUE)
+shared   <- manifest_shared_paths(raw)
+if (!length(archives)) {
+  fail("no .tar.zst archives found under %s/ — the committed raw inputs are absent", raw)
+} else {
+  bad <- 0L
+  for (a in archives) {
+    key <- sub("^input-data-raw/", "", a)
+    chk <- manifest_check(key, raw, ignore = shared)
+    if (!chk$ok) { fail("archive %s: %s", basename(a), chk$reason); bad <- bad + 1L }
+  }
+  note("  [ok  ] %d/%d archives verified (%d shared catalogue paths excluded)",
+       length(archives) - bad, length(archives), length(shared))
+}
+
+# --- 2. downloaded + unzipped inputs ---------------------------------------
+note("== downloaded inputs ==")
+required_files <- c(
+  "CONAPO quinquennial population" =
+    file.path(raw, "population", "00_Republica_mexicana", "1_Grupo_Quinq_00_RM.xlsx"),
+  "IMM 2020" = file.path(raw, "marginalization", "IMM_2020.xls"),
+  "IMM 2015" = file.path(raw, "marginalization", "IMM_DP2_2015.xlsx"),
+  "IMM 2010" = file.path(raw, "marginalization", "IMM_DP2_2010.xlsx"),
+  "GADM ADM2 geometries" = file.path(raw, "geometries", "gadm41_MEX_2.json"))
+for (lbl in names(required_files)) {
+  f <- required_files[[lbl]]
+  if (!file.exists(f)) fail("%s missing: %s", lbl, f)
+  else if (file.info(f)$size < 10000) fail("%s is only %d bytes — likely an HTML stub, not data",
+                                           lbl, file.info(f)$size)
+  else note("  [ok  ] %-32s %6.1f MB", lbl, file.info(f)$size / 1024^2)
+}
+
+# --- 3. per-year panels vs their manifest ----------------------------------
+note("== per-year panels ==")
+mf <- file.path(proc, ".manifest", "ch1_012.csv")
+birth_years <- 1985:2024
+death_years <- 1990:2024
+check_panels <- function(dir, prefix, years, value_col) {
+  bad <- 0L; tot <- 0
+  for (y in years) {
+    id  <- sprintf("%s_%d", prefix, y)
+    out <- file.path(proc, dir, paste0(id, ".RDS"))
+    rec <- table_manifest_get(mf, id)
+    if (!file.exists(out)) { fail("panel %s missing", id); bad <- bad + 1L; next }
+    if (is.null(rec))      { fail("panel %s has no manifest entry — provenance unknown", id)
+                             bad <- bad + 1L; next }
+    d <- tryCatch(readRDS(out), error = function(e) NULL)
+    if (is.null(d)) { fail("panel %s is unreadable", id); bad <- bad + 1L; next }
+    n <- sum(d[[value_col]], na.rm = TRUE)
+    if (nrow(d) != rec$rows || !isTRUE(all.equal(n, rec$total))) {
+      fail("panel %s: manifest says %s rows / %s %s, found %s / %s",
+           id, format(rec$rows, big.mark = ","), format(rec$total, big.mark = ","), value_col,
+           format(nrow(d), big.mark = ","), format(n, big.mark = ","))
+      bad <- bad + 1L; next
+    }
+    tot <- tot + n
+  }
+  note("  [%s] %d/%d %s panels verified, %s %s total",
+       if (bad) "FAIL" else "ok  ", length(years) - bad, length(years), prefix,
+       format(tot, big.mark = ","), value_col)
+}
+check_panels("fertility datasets", "fert", birth_years, "births")
+check_panels("mortality datasets", "mort", death_years, "deaths")
+
+# --- 4. ch1_015 artefacts ---------------------------------------------------
+# These names are written by ch1_015 AND later overwritten by ch2_060 with
+# different content, so the vintage on disk depends on how far the pipeline has
+# run. Check the schema and plausibility, and report which vintage this looks
+# like rather than pretending the name is unambiguous.
+note("== ch1_015 artefacts ==")
+# Each entry lists one or more ACCEPTABLE schemas. marg_index.RDS in particular
+# is two entirely different objects depending on the writer: ch1_015 stores the
+# municipality-level IMM table, ch2_060 overwrites it with a group-level,
+# year-interpolated, GM-classified index (and writes the same object again as
+# index_grouped_mun.RDS). Accept either and report which is on disk, rather than
+# pretending the filename determines the content.
+expect <- list(
+  births.RDS     = list(`ch1_015/ch2_060` = c("year", "sex", "age", "mun", "births", "year_reg")),
+  deaths.RDS     = list(`ch1_015/ch2_060` = c("year", "sex", "age", "mun", "deaths", "year_reg")),
+  population.RDS = list(`municipal`       = c("mun", "sex", "year", "age", "population")),
+  geo_info.RDS   = list(`municipal`       = c("state", "state_name", "mun", "mun_name", "capital")),
+  marg_index.RDS = list(`ch1_015 municipal IMM` = c("mun", "IMN", "GM"),
+                        `ch2_060 group-level`   = c("group_id", "year", "IMN", "GM")))
+for (nm in names(expect)) {
+  f <- file.path(proc, nm)
+  if (!file.exists(f)) { fail("%s missing (run ch1_015)", nm); next }
+  d <- tryCatch(readRDS(f), error = function(e) NULL)
+  if (is.null(d)) { fail("%s is unreadable", nm); next }
+  hits <- vapply(expect[[nm]], function(cols) all(cols %in% names(d)), logical(1))
+  if (!any(hits)) {
+    fail("%s matches no known schema. Has: %s. Expected one of: %s",
+         nm, paste(names(d), collapse = ", "),
+         paste(sprintf("%s (%s)", names(expect[[nm]]),
+                       vapply(expect[[nm]], paste, character(1), collapse = "+")), collapse = " | "))
+    next
+  }
+  vintage <- names(expect[[nm]])[which(hits)[1]]
+  tag <- if (length(expect[[nm]]) > 1 || "group_id" %in% names(d))
+    sprintf("  [%s]", if ("group_id" %in% names(d) && vintage == "municipal")
+                        "ch2_060 vintage: carries group_id" else vintage) else ""
+  note("  [ok  ] %-16s %9s rows%s", nm, format(nrow(d), big.mark = ","), tag)
+}
+
+pop <- tryCatch(readRDS(file.path(proc, "population.RDS")), error = function(e) NULL)
+if (!is.null(pop) && "population" %in% names(pop)) {
+  p2020 <- sum(pop$population[pop$year == 2020], na.rm = TRUE)
+  # ch2_010 asserts >1.2e8 for the all-ages total. ch1_015 writes the adult-only
+  # vintage (keep_child = FALSE), so a lower total here is expected, not wrong.
+  note("  [info] population.RDS 2020 total: %s%s", format(round(p2020), big.mark = ","),
+       if (p2020 > 1.2e8) " (all ages)" else " (age-restricted vintage)")
+}
+
+# --- 5. the two distinct `99` sentinels ------------------------------------
+# Keep both visible: one is an unknown occurrence YEAR in the two-digit-year
+# files (dropped by load_year_panels); the other is unknown parental AGE in the
+# INEGI microdata, which falls out of preprocess_fertility()'s 15-64/15-84
+# filter without ever being counted. They are unrelated and easily conflated.
+note("== sentinels and ranges ==")
+for (nm in c("births.RDS", "deaths.RDS")) {
+  f <- file.path(proc, nm)
+  if (!file.exists(f)) next
+  d <- readRDS(f)
+  note("  [info] %-11s year %d-%d, year_reg %d-%d, %d rows with year == 99",
+       nm, min(d$year, na.rm = TRUE), max(d$year, na.rm = TRUE),
+       min(d$year_reg, na.rm = TRUE), max(d$year_reg, na.rm = TRUE),
+       sum(d$year == 99, na.rm = TRUE))
+}
+note("  [info] unknown parental age (INEGI code 99) is dropped upstream by")
+note("         preprocess_fertility()'s age filter and is NOT counted anywhere;")
+note("         see docs/audit/thesis_vs_code_backlog.md.")
+
+# --- verdict ---------------------------------------------------------------
+if (length(fails)) {
+  message("")
+  stop(sprintf("ch1_020: %d check(s) failed:\n  - %s\n\nRe-run the relevant step; ORPHAN_FORCE_EXTRACT=1 / ORPHAN_FORCE_PANELS=1 force a rebuild.",
+               length(fails), paste(fails, collapse = "\n  - ")), call. = FALSE)
+}
+message("\nch1_020: all checks passed. Chapter 1 inputs are intact — no need to re-run ch1_010/011/012.")
