@@ -566,6 +566,53 @@ p_pop <- main |>
 ggsave(file.path(fig_dir, "ch2_020_unit_population_distribution.pdf"), th_scale(p_pop),
        width = 9, height = 5.5)
 
+# --- The single summary panel: all three thesis criteria on one axis ----------
+# Section 2.4 names three requirements but only quantifies none of them. This is
+# the figure that puts them side by side: the two benefits and the one cost,
+# each indexed to its own ungrouped (threshold = 0) value so they share a scale.
+# One y-axis - the three series are deliberately made commensurate rather than
+# given separate scales, which would make the crossings meaningless.
+tradeoff_series <- bind_rows(
+  pick("stability_mortality", "cv_median", sexes = "both") |>
+    mutate(series = "Year-on-year instability (CV)", role = "Benefit"),
+  pick("sparsity_mortality", "zero_cell_share") |>
+    mutate(series = "Cells with zero deaths", role = "Benefit"),
+  pick("heterogeneity_mortality", "V_sig") |>
+    mutate(series = "Real variation between places", role = "Cost")) |>
+  group_by(series) |>
+  # Index to the ungrouped baseline. Asserted rather than assumed: if the 0 row
+  # is ever dropped from THRESHOLDS this silently becomes a different figure.
+  mutate(base = value[threshold == 0]) |>
+  ungroup()
+stopifnot(nrow(tradeoff_series) > 0, !anyNA(tradeoff_series$base),
+          all(tradeoff_series$base > 0))
+tradeoff_series <- tradeoff_series |> mutate(rel = value / base)
+
+# Validated with the dataviz palette checker (light surface): all six checks pass,
+# worst adjacent CVD dE 14.7. Do not substitute hues without re-running it.
+tradeoff_cols <- c("Year-on-year instability (CV)" = "#3d7fb5",
+                   "Cells with zero deaths"        = "#d4785f",
+                   "Real variation between places"  = "#8a6bb0")
+
+p_combined <- ggplot(tradeoff_series, aes(threshold, rel, colour = series)) +
+  geom_vline(xintercept = 50000, linetype = 2, colour = "grey65") +
+  annotate("text", x = 50000, y = 1.02, label = "current threshold",
+           hjust = -0.05, size = 3.2, colour = "grey40") +
+  geom_line(aes(linetype = role), linewidth = 0.8) +
+  geom_point(size = 2) +
+  scale_colour_manual(values = tradeoff_cols, name = NULL) +
+  scale_linetype_manual(values = c(Benefit = "solid", Cost = "22"), name = NULL) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(y = "Relative to ungrouped municipalities",
+       title = "What the population threshold buys, and what it costs",
+       subtitle = paste("Mortality,", sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS)),
+                        "- the two benefits fall steeply then flatten;",
+                        "the cost falls roughly in a straight line")) +
+  theme(legend.position = "bottom", legend.box = "vertical",
+        legend.margin = margin(t = -4))
+ggsave(file.path(fig_dir, "ch2_020_threshold_tradeoff.png"), th_scale(p_combined),
+       width = 9, height = 6, dpi = 150)
+
 # =============================================================================
 # 5. Console summary — this block is the source for docs/ch2_grouping_diagnostics.md
 # =============================================================================

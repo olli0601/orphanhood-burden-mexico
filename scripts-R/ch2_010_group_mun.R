@@ -215,5 +215,66 @@ p_map_group_boundaries <- ggplot() +
   labs(title = "Group Boundaries Overlaid on Original Municipalities")
 ggsave(file.path(fig_dir, "ch2_010_map_group_boundaries.pdf"), p_map_group_boundaries, width = 8, height = 8)
 
+# --- Before/after map of the analytical units --------------------------------
+# The two maps above are not readable as summaries: p_map_groups_50000 assigns a
+# distinct hue to each of the ~777 units, so the colour carries no information,
+# and p_map_group_boundaries is a dense two-layer overlay. This one answers the
+# question actually being asked - WHERE did aggregation happen - by shading each
+# unit by how many municipalities went into it. That is a magnitude, so it gets
+# one hue light-to-dark, not a categorical palette.
+library(gridExtra)
+
+merge_counts <- grouped_mun_50000 |>
+  sf::st_drop_geometry() |>
+  dplyr::count(group_id, name = "n_muns")
+
+units_map <- aggregated_muni_50000 |>
+  dplyr::left_join(merge_counts, by = "group_id") |>
+  dplyr::mutate(n_band = factor(dplyr::case_when(n_muns == 1 ~ "1 (unchanged)",
+                                                 n_muns == 2 ~ "2",
+                                                 n_muns == 3 ~ "3",
+                                                 n_muns == 4 ~ "4",
+                                                 TRUE        ~ "5+"),
+                                levels = c("1 (unchanged)", "2", "3", "4", "5+")))
+stopifnot(!anyNA(units_map$n_muns))
+
+# Sequential, one hue, light-to-dark. The lightest step is deliberately not
+# near-white: singletons are ~half the units and must still read as a filled
+# area against the page.
+seq_blues <- c("1 (unchanged)" = "#dbe6f2", "2" = "#a8c4de", "3" = "#6f9cc6",
+               "4" = "#3d73a8", "5+" = "#1b4a75")
+
+# Both panels carry a bottom legend so the two plot areas are the same width.
+# With the legend on the right the maps render at different sizes and the titles
+# no longer line up.
+map_theme <- theme_minimal(base_size = 11) +
+  theme(axis.text = element_blank(), panel.grid = element_blank(),
+        plot.title = element_text(face = "bold"), legend.position = "bottom",
+        plot.margin = margin(4, 4, 4, 4))
+
+p_before <- ggplot(mex_muni) +
+  geom_sf(aes(fill = "Municipality"), colour = "grey55", linewidth = 0.06) +
+  scale_fill_manual(values = c(Municipality = "grey92"), name = NULL) +
+  map_theme +
+  labs(title = sprintf("Before: %s municipalities", format(nrow(mex_muni), big.mark = ",")),
+       subtitle = "INEGI municipalities as published")
+
+p_after <- ggplot(units_map) +
+  geom_sf(aes(fill = n_band), colour = "white", linewidth = 0.1) +
+  scale_fill_manual(values = seq_blues, name = "Municipalities per unit", drop = FALSE) +
+  guides(fill = guide_legend(nrow = 1, title.position = "top")) +
+  map_theme +
+  labs(title = sprintf("After: %s analytical units", format(nrow(units_map), big.mark = ",")),
+       subtitle = sprintf("%s merged, %s already above 50,000",
+                          format(sum(merge_counts$n_muns > 1), big.mark = ","),
+                          format(sum(merge_counts$n_muns == 1), big.mark = ",")))
+
+png(file.path(fig_dir, "ch2_010_map_units_50000.png"),
+    width = 12, height = 5.5, units = "in", res = 150)
+grid.arrange(p_before, p_after, ncol = 2)
+invisible(dev.off())
+message(sprintf("ch2_010: wrote ch2_010_map_units_50000.png (%d units, max %d muns/unit)",
+                nrow(units_map), max(merge_counts$n_muns)))
+
 
 #------------ RELATIONSHIP WITH MPI ---------------
