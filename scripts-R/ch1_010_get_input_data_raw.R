@@ -5,7 +5,7 @@
 # them; INEGI births/deaths must be added manually (no scriptable URL).
 #
 # Reads : remote URLs (CONAPO, GADM)
-# Writes: input-data-raw/{births,deaths,population,marginalization,geometries}/
+# Writes: input-data-raw/{births,deaths,population,marginalization,geometries,census}/
 # Run    : first — everything else depends on these raw files.
 # =============================================================================
 
@@ -19,6 +19,7 @@
 #   3. CONAPO - Indice de Marginacion Municipal (IMM)      (marginalization)
 #   4. gob.mx - municipal population statistics            (population)
 #   5. GADM   - municipal geometries v4.1                  (spatial units)
+#   6. INEGI  - 2020/2010 census locality tables (ITER)    (marginalization inputs)
 #
 # Run from the repository root:   Rscript R/get_input_data_raw.R
 #
@@ -42,7 +43,8 @@ dirs <- c(
   deaths       = file.path(raw_dir, "deaths"),
   population   = file.path(raw_dir, "population"),
   marginalization = file.path(raw_dir, "marginalization"),
-  geometries   = file.path(raw_dir, "geometries")
+  geometries   = file.path(raw_dir, "geometries"),
+  census       = file.path(raw_dir, "census")
 )
 for (d in dirs) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
@@ -151,16 +153,29 @@ fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
     return(invisible(TRUE))
   }
   message(sprintf("  [get ] %s", basename(dest)))
-  ok <- tryCatch(
-    {
-      utils::download.file(url, dest, mode = "wb", quiet = TRUE)
-      TRUE
-    },
-    error = function(e) {
-      message(sprintf("  [FAIL] %s : %s", basename(dest), conditionMessage(e)))
-      FALSE
-    }
-  )
+  # Retry: conapo.segob.gob.mx intermittently answers a valid path with a 301
+  # to www.gob.mx, which 404s (observed 2026-10 on the 90-15 CSV; the next
+  # request succeeded).
+  for (attempt in 1:3) {
+    ok <- tryCatch(
+      {
+        utils::download.file(url, dest, mode = "wb", quiet = TRUE)
+        TRUE
+      },
+      error = function(e) {
+        message(sprintf("  [%s] %s : %s", if (attempt < 3) "retry" else "FAIL",
+                        basename(dest), conditionMessage(e)))
+        FALSE
+      },
+      warning = function(w) {
+        message(sprintf("  [%s] %s : %s", if (attempt < 3) "retry" else "FAIL",
+                        basename(dest), conditionMessage(w)))
+        FALSE
+      }
+    )
+    if (ok) break
+    Sys.sleep(2)
+  }
   if (ok && file.exists(dest) && file.info(dest)$size < min_bytes) {
     message(sprintf(
       "  [WARN] %s is only %d bytes - likely a dead link / HTML stub, not data.",
@@ -347,6 +362,14 @@ fetch(file.path(.imm, "IMM_2020.xls"),      file.path(dirs["marginalization"], "
 fetch(file.path(.imm, "IMM_DP2_2015.xlsx"), file.path(dirs["marginalization"], "IMM_DP2_2015.xlsx"), min_bytes = 5000)
 fetch(file.path(.imm, "IMM_DP2_2010.xlsx"), file.path(dirs["marginalization"], "IMM_DP2_2010.xlsx"), min_bytes = 5000)
 
+# 1990-2015 series (1990, 1995, 2000, 2005, 2010, 2015 stacked; PCA-era index):
+# raw indicator percentages per municipality-year, for the fixed-weight index
+# in ch2_055. Listed on the 1990-2010 and 2015 release pages:
+# https://www.gob.mx/conapo/documentos/indices-de-marginacion-1990-2010
+fetch(file.path(.imm, "Base_Indice_de_marginacion_municipal_90-15.csv"),
+      file.path(dirs["marginalization"], "Base_Indice_de_marginacion_municipal_90-15.csv"),
+      min_bytes = 100000)
+
 # ===========================================================================
 # 4. CONAPO - municipal population (BD municipales, "pry23" reconstruction)
 # ===========================================================================
@@ -382,7 +405,27 @@ fetch(
 )
 
 # ===========================================================================
-# 6. Verify the auto-downloaded files later chapters actually require
+# 6. INEGI - census locality tables (ITER), 2020 and 2010
+# ===========================================================================
+# CONAPO's 2020 index replaced "15+ without complete primary" with "15+ without
+# basic education", so ch2_055 rebuilds the old education indicator for 2020
+# from ITER (municipal-total rows, LOC == 0000), following Pelaez (2023). The
+# 2010 file is for validating that reconstruction against CONAPO's published
+# 2010 value. Only the data CSV is extracted. INEGI answers missing files with
+# HTTP 200 and a ~2 KB HTML page, which min_bytes catches.
+message("== INEGI census ITER ==")
+.iter <- "https://www.inegi.org.mx/contenidos/programas/ccpv"
+fetch(file.path(.iter, "2020/datosabiertos/iter/iter_00_cpv2020_csv.zip"),
+      file.path(dirs["census"], "iter_00_cpv2020_csv.zip"),
+      unzip = TRUE, only = "conjunto_de_datos/.*[.]csv$",
+      marker = file.path(dirs["census"], "iter_00_cpv2020"))
+fetch(file.path(.iter, "2010/datosabiertos/iter_nal_2010_csv.zip"),
+      file.path(dirs["census"], "iter_nal_2010_csv.zip"),
+      unzip = TRUE, only = "conjunto_de_datos/.*[.]csv$",
+      marker = file.path(dirs["census"], "iter_00_cpv2010"))
+
+# ===========================================================================
+# 7. Verify the auto-downloaded files later chapters actually require
 # ===========================================================================
 # fetch() reports failures with message() and returns FALSE rather than
 # aborting, so a dead link or TLS problem would otherwise leave this script
@@ -395,6 +438,12 @@ required <- c(
   "marginalization IMM 2020" = file.path(dirs["marginalization"], "IMM_2020.xls"),
   "marginalization IMM 2015" = file.path(dirs["marginalization"], "IMM_DP2_2015.xlsx"),
   "marginalization IMM 2010" = file.path(dirs["marginalization"], "IMM_DP2_2010.xlsx"),
+  "marginalization IMM 1990-2015" =
+    file.path(dirs["marginalization"], "Base_Indice_de_marginacion_municipal_90-15.csv"),
+  "census ITER 2020" = file.path(dirs["census"], "iter_00_cpv2020", "conjunto_de_datos",
+                                 "conjunto_de_datos_iter_00CSV20.csv"),
+  "census ITER 2010" = file.path(dirs["census"], "iter_00_cpv2010", "conjunto_de_datos",
+                                 "iter_00_cpv2010.csv"),
   "GADM geometries"          = file.path(dirs["geometries"], "gadm41_MEX_2.json")
 )
 missing_required <- character(0)

@@ -22,7 +22,8 @@ library(Polychrome)
 library(sf)
 source("R/grouped_mun.R")
 
-fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+source("R/marginalization.R")
+fig_dir <- marg_fig_dir("output/ch3")  # output/ch3_fw when ORPHAN_MARG=fw
 
 ################################################################################
 
@@ -128,7 +129,7 @@ ggsave(file.path(fig_dir, "ch3_050_deaths_delay_by_registration.pdf"), p_deaths_
 
 
 # JOIN WITH THE MPI
-marg_index <- readRDS(file = "input-data-processed/index_grouped_mun.RDS")
+marg_index <- readRDS(marg_file("index_grouped_mun"))
 
 marg_index <- marg_index |>
   mutate(
@@ -289,7 +290,7 @@ ggsave(file.path(fig_dir, "ch3_050_births_delay_by_registration.pdf"), p_births_
 
 
 # JOIN WITH THE MPI
-marg_index <- readRDS(file = "input-data-processed/index_grouped_mun.RDS")
+marg_index <- readRDS(marg_file("index_grouped_mun"))
 
 marg_index <- marg_index |>
   mutate(

@@ -26,7 +26,8 @@ library(foreign)
 library(Polychrome)
 library(sf)
 source("R/rates.R"); source("R/plots.R"); source("R/load_year_panels.R"); source("R/grouped_mun.R")
-fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+source("R/marginalization.R")
+fig_dir <- marg_fig_dir("output/ch3")  # output/ch3_fw when ORPHAN_MARG=fw
 ################################################################################
 
 #---------------------------- SHOW DELAY REPORTING ----------------------------
@@ -189,29 +190,10 @@ saveRDS(mort, file = "input-data-processed/mort_by_grouped_mun.RDS")
 #------------------------------------- MPI -------------------------------------
 
 ################################################################################
-index_marg <- readRDS("input-data-processed/index_grouped_mun.RDS")
-library(dplyr)
-library(tidyr)
-
-# Ensure year is numeric
-index_marg <- index_marg |>
-  mutate(year = as.integer(year))
-
-# Get 2010 values for all group_ids
-imn_2010 <- index_marg |>
-  filter(year == 2010) |>
-  mutate(year = list(1990:2009)) |>
-  unnest(year)
-
-# Get 2020 values for all group_ids
-imn_2020 <- index_marg |>
-  filter(year == 2020) |>
-  mutate(year = list(2021:2023)) |>
-  unnest(year)
-
-# Combine everything
-index_marg <- bind_rows(imn_2010, index_marg, imn_2020) |>
-  arrange(group_id, year)
+# Years outside the index's coverage take the nearest observed year (CONAPO:
+# 2010 back to 1990, 2020 forward to 2023; fixed-weight: only 2021-2023).
+index_marg <- readRDS(marg_file("index_grouped_mun")) |>
+  extend_marg_years(1990:2023)
 
 
 df_2023_mort <- mort |> filter(year==2020) |> left_join(index_marg, by = c("group_id", "year")) 

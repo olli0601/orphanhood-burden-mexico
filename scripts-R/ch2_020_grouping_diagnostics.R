@@ -236,15 +236,33 @@ metrics_sparsity <- function(panel, count_col, family_label) {
 # `var_samp_1y` is the mean single-year sampling variance, i.e. the noise a
 # reader of one year's map actually faces. The two answer different questions
 # and, over an 11-year window, differ by two orders of magnitude — report both.
-sampling_variance <- function(panel, count_col, std_pop) {
+#
+# The Poisson variance of a count is its EXPECTED value. Plugging in the observed
+# count (as this function used to) scores every zero cell as zero noise, so the
+# small municipalities where zeros concentrate looked precise — understating what
+# merging buys and biasing the threshold choice downwards. The expected count is
+# population x the national rate for that year, sex and age (`nat_rate`). The
+# observed-count version is kept as var_samp_1y_obs for comparison only.
+sampling_variance <- function(panel, count_col, std_pop, nat_rate) {
   tot <- sum(std_pop$p_nat)
   n_y <- n_distinct(panel$year)
   panel |>
     left_join(std_pop, by = c("sex", "age")) |>
+    left_join(nat_rate, by = c("year", "sex", "age")) |>
     filter(population > 0) |>
-    mutate(v = (p_nat / tot)^2 * .data[[count_col]] / population^2) |>
+    mutate(v     = (p_nat / tot)^2 * nat_rate / population,       # = w^2 E[d] / N^2
+           v_obs = (p_nat / tot)^2 * .data[[count_col]] / population^2) |>
     group_by(group_id) |>
-    summarise(var_samp = sum(v) / n_y^2, var_samp_1y = sum(v) / n_y, .groups = "drop")
+    summarise(var_samp = sum(v) / n_y^2, var_samp_1y = sum(v) / n_y,
+              var_samp_1y_obs = sum(v_obs) / n_y, .groups = "drop")
+}
+
+# National rate per year x sex x age, from the ungrouped panel. Shared by every
+# threshold so the expected counts do not depend on the grouping.
+national_rate <- function(panel, count_col) {
+  panel |>
+    group_by(year, sex, age) |>
+    summarise(nat_rate = sum(.data[[count_col]]) / sum(population), .groups = "drop")
 }
 
 metrics_heterogeneity <- function(rate_bar, var_samp, lookup, unit_w, family_label) {
@@ -254,6 +272,7 @@ metrics_heterogeneity <- function(rate_bar, var_samp, lookup, unit_w, family_lab
   V_obs  <- sum(d$W * (d$mean_rate - Rbar)^2) / sum(d$W)
   V_samp <- weighted.mean(d$var_samp, d$W)
   V_samp_1y <- weighted.mean(d$var_samp_1y, d$W)
+  V_samp_1y_obs <- weighted.mean(d$var_samp_1y_obs, d$W)
   V_sig  <- max(0, V_obs - V_samp)
 
   # Deprivation gradient. Population-weighted OLS of the unit rate on the unit's
@@ -278,10 +297,10 @@ metrics_heterogeneity <- function(rate_bar, var_samp, lookup, unit_w, family_lab
   rho  <- suppressWarnings(cor(dg$mean_rate, dg$IMN, method = "spearman"))
 
   tibble(
-    metric = c("V_obs", "V_samp", "V_sig", "NSR", "V_samp_1y", "NSR_1y",
+    metric = c("V_obs", "V_samp", "V_sig", "NSR", "V_samp_1y", "NSR_1y", "V_samp_1y_obs",
                "beta_IMN", "beta_IMN_se", "r2_IMN", "spearman_IMN"),
     value = c(V_obs, V_samp, V_sig, if (V_sig > 0) V_samp / V_sig else NA_real_,
-              V_samp_1y, if (V_sig > 0) V_samp_1y / V_sig else NA_real_,
+              V_samp_1y, if (V_sig > 0) V_samp_1y / V_sig else NA_real_, V_samp_1y_obs,
               beta, beta_se, summary(fit)$r.squared, rho)) |>
     mutate(family = paste0("heterogeneity_", family_label), sex = "all", .before = 1)
 }
@@ -376,12 +395,19 @@ run_sweep <- function(years, label) {
   std_fert <- suppressMessages(.drop_unstandardisable(base_fert, "fert_rate", "std_pop")) |>
     group_by(group_id, sex, age) |> summarise(population = mean(population), .groups = "drop") |>
     group_by(sex, age) |> summarise(p_nat = sum(population), .groups = "drop")
+  nat_mort <- national_rate(base_mort, "deaths")
+  nat_fert <- national_rate(base_fert, "births")
 
   out <- list()
   for (th in c(0, THRESHOLDS)) {
     g <- make_grouping(th)
     W <- g$lookup |> left_join(mun_pop, by = "mun") |>
       group_by(group_id) |> summarise(W = sum(total_pop), .groups = "drop")
+    # Second weighting: every MUNICIPALITY counts equally (W = municipalities in
+    # the unit), so small areas — where the zeros are — are not drowned out by
+    # population weights. Still a valid law-of-total-variance decomposition over
+    # municipalities, which the MSE below relies on.
+    W_mun <- g$lookup |> count(group_id, name = "W")
 
     pm <- build_panel(gm, dm, g$lookup, "deaths") |> mutate(mort_rate = deaths / population)
     pf <- build_panel(gf, df, g$lookup, "births") |> mutate(fert_rate = births / population)
@@ -395,6 +421,8 @@ run_sweep <- function(years, label) {
 
     rbar_m <- rm_both |> group_by(group_id) |> summarise(mean_rate = mean(std_mort_rate), .groups = "drop")
     rbar_f <- rf_     |> group_by(group_id) |> summarise(mean_rate = mean(std_fert_rate), .groups = "drop")
+    sv_m <- sampling_variance(pm, "deaths", std_mort, nat_mort)
+    sv_f <- sampling_variance(pf, "births", std_fert, nat_fert)
 
     out[[length(out) + 1]] <- bind_rows(
       metrics_composition(g$lookup, g$units, g$diag),
@@ -402,8 +430,10 @@ run_sweep <- function(years, label) {
       metrics_stability(rf_,    "std_fert_rate", W, "fertility"),
       metrics_sparsity(pm, "deaths", "mortality"),
       metrics_sparsity(pf, "births", "fertility"),
-      metrics_heterogeneity(rbar_m, sampling_variance(pm, "deaths", std_mort), g$lookup, W, "mortality"),
-      metrics_heterogeneity(rbar_f, sampling_variance(pf, "births", std_fert), g$lookup, W, "fertility")
+      metrics_heterogeneity(rbar_m, sv_m, g$lookup, W, "mortality"),
+      metrics_heterogeneity(rbar_f, sv_f, g$lookup, W, "fertility"),
+      metrics_heterogeneity(rbar_m, sv_m, g$lookup, W_mun, "mortality_munweighted"),
+      metrics_heterogeneity(rbar_f, sv_f, g$lookup, W_mun, "fertility_munweighted")
     ) |> mutate(threshold = th, window = label, .before = 1)
 
     message(sprintf("ch2_020 [%s] threshold %6s: %4d units, median pop %s",
@@ -443,6 +473,29 @@ chk("unit count",            series("composition", "n_units"))
 chk("zero-cell share",       series("sparsity_mortality", "zero_cell_share"))
 chk("between-unit variance", series("heterogeneity_mortality", "V_obs"))
 chk("median unit population", series("composition", "median_unit_pop"), decreasing = FALSE)
+
+# --- the threshold criterion: single-year mean squared error ------------------
+# Represent each municipality by its unit's single-year standardised rate. The
+# expected squared error against the municipality's true (long-run) rate is
+#   blur  = real between-municipality variance merged away = V_sig(0) - V_sig(t)
+#           (law of total variance: within-unit variance of true municipal rates)
+#   noise = single-year sampling variance of the unit rate = V_samp_1y(t)
+#   MSE   = blur + noise;  MSE_rel = MSE / MSE(0), where MSE(0) = V_samp_1y(0).
+# Lower is better. Computed for both weightings (population; every municipality
+# equal). THIS DOES NOT PICK THE THRESHOLD — it is evidence for the researchers.
+mse <- res |>
+  filter(startsWith(family, "heterogeneity_"), metric %in% c("V_sig", "V_samp_1y")) |>
+  select(window, family, threshold, metric, value) |>
+  pivot_wider(names_from = metric, values_from = value) |>
+  group_by(window, family) |>
+  mutate(blur = V_sig[threshold == 0] - V_sig,
+         MSE  = blur + V_samp_1y,
+         MSE_rel = MSE / MSE[threshold == 0]) |>
+  ungroup() |>
+  select(window, family, threshold, blur, MSE, MSE_rel) |>
+  pivot_longer(c(blur, MSE, MSE_rel), names_to = "metric", values_to = "value") |>
+  mutate(family = sub("^heterogeneity_", "mse_", family), sex = "all")
+res <- bind_rows(res, mse)
 
 res <- res |>
   group_by(window, family, metric, sex) |>
@@ -634,3 +687,38 @@ print(as.data.frame(summ), digits = 4, row.names = FALSE)
 cat("\nFull tables: ", file.path(fig_dir, "ch2_020_grouping_diagnostics.csv"), "\n")
 cat("This block is the ONLY source for docs/ch2_grouping_diagnostics.md.\n")
 cat("=====================================================\n")
+
+# =============================================================================
+# 6. Single-year MSE (blur + noise) — see the criterion block in section 3
+# =============================================================================
+mse_tab <- res |>
+  filter(startsWith(family, "mse_"), metric == "MSE_rel") |>
+  mutate(outcome   = if_else(grepl("mortality", family), "Mortality", "Fertility (mothers)"),
+         weighting = if_else(grepl("munweighted", family), "every municipality equal", "population-weighted"))
+
+p_mse <- ggplot(mse_tab |> filter(window == sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS))),
+                aes(threshold, value, colour = weighting)) +
+  geom_hline(yintercept = 1, colour = "grey60", linetype = "dashed") +
+  geom_line() + geom_point() +
+  facet_wrap(~outcome, scales = "free_y") +
+  labs(y = "Single-year MSE relative to ungrouped (lower is better)", colour = NULL,
+       title = "Blurring of real differences + single-year noise, by threshold",
+       subtitle = "Noise from expected Poisson counts (population x national rate), so zero cells count as noisy") +
+  theme(legend.position = "bottom")
+ggsave(file.path(fig_dir, "ch2_020_mse_by_threshold.pdf"), th_scale(p_mse) + theme(legend.position = "bottom"),
+       width = 9, height = 4.5)
+
+cat("\n============ ch2_020 single-year MSE (relative to ungrouped) ============\n")
+print(as.data.frame(
+  mse_tab |> select(window, outcome, weighting, threshold, value) |>
+    mutate(value = round(value, 3)) |>
+    pivot_wider(names_from = threshold, values_from = value)), row.names = FALSE)
+noise_cmp <- res |>
+  filter(family %in% c("heterogeneity_mortality", "heterogeneity_mortality_munweighted"),
+         metric %in% c("V_samp_1y", "V_samp_1y_obs"),
+         window == sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS))) |>
+  select(family, metric, threshold, value) |>
+  pivot_wider(names_from = metric, values_from = value) |>
+  mutate(expected_over_observed = round(V_samp_1y / V_samp_1y_obs, 3))
+cat("\nMortality single-year noise: expected-count vs observed-count estimate\n")
+print(as.data.frame(noise_cmp |> select(family, threshold, expected_over_observed)), row.names = FALSE)

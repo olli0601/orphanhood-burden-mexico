@@ -22,8 +22,9 @@ suppressPackageStartupMessages({
 })
 
 source("R/rates.R")
+source("R/marginalization.R")
 
-dir.create("output/ch5", recursive = TRUE, showWarnings = FALSE)
+fig_dir <- marg_fig_dir("output/ch5")  # output/ch5_fw when ORPHAN_MARG=fw
 
 # =============================================================================
 #  1.  Read data
@@ -96,7 +97,7 @@ p_fert_rate_check <- ggplot(fr_plot, aes(age, mean_fr, colour = sex, group = sex
   scale_x_discrete(guide = guide_axis(angle = 90)) +
   labs(title = "Population-weighted fertility rate by parent age band (1990-2023)",
        y = "Births per adult", x = "Parent age band")
-ggsave("output/ch5/ch5_020_fert_rate_check.pdf", p_fert_rate_check, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_fert_rate_check.pdf"), p_fert_rate_check, width = 8, height = 6)
 
 
 # =============================================================================
@@ -528,7 +529,7 @@ p_incidence <- ggplot(O_new_tot, aes(year, O_new)) +
   theme_minimal()
 
 print(p_incidence)
-ggsave("output/ch5/ch5_020_incidence.pdf", p_incidence, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_incidence.pdf"), p_incidence, width = 8, height = 6)
 
 inc_plot <- O_new_tot |>
   group_by(year) |>
@@ -544,7 +545,7 @@ p_incidence_line <- ggplot(inc_plot, aes(year, incidence)) +
   labs(title = "Incidence of Orphanhood (new cases)",
        y = "New orphans", x = NULL) +
   theme_minimal()
-ggsave("output/ch5/ch5_020_incidence_line.pdf", p_incidence_line, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_incidence_line.pdf"), p_incidence_line, width = 8, height = 6)
 
 
 # ------------ 2. Lifetime prevalence (total) ------------------
@@ -557,7 +558,7 @@ p_prev_tot <- ggplot(O_lifetime_total, aes(year, Olifetime)) +
   theme_minimal()
 
 print(p_prev_tot)
-ggsave("output/ch5/ch5_020_prevalence_total.pdf", p_prev_tot, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prevalence_total.pdf"), p_prev_tot, width = 8, height = 6)
 # ------------ 3. Prevalence by child age (latest year) --------
 latest_year <- max(O_lifetime$year)
 p_prev_age <- O_lifetime[year == latest_year] |>
@@ -569,7 +570,7 @@ p_prev_age <- O_lifetime[year == latest_year] |>
   theme_minimal()
 
 print(p_prev_age)
-ggsave("output/ch5/ch5_020_prevalence_by_child_age.pdf", p_prev_age, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prevalence_by_child_age.pdf"), p_prev_age, width = 8, height = 6)
 # ------------ 4. Lifetime prevalence by parent sex ------------
 p_prev_sex <- ggplot(O_lifetime_sex, aes(year, Olifetime, colour = sex)) +
   geom_line(linewidth = 1.1) +
@@ -583,7 +584,7 @@ p_prev_sex <- ggplot(O_lifetime_sex, aes(year, Olifetime, colour = sex)) +
   theme_minimal()
 
 print(p_prev_sex)
-ggsave("output/ch5/ch5_020_prevalence_by_sex.pdf", p_prev_sex, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prevalence_by_sex.pdf"), p_prev_sex, width = 8, height = 6)
 
 ## 1️⃣  Collapse to one number per (year, sex)
 prev_sex_year <- O_lifetime_sex |>
@@ -620,7 +621,7 @@ p_prev_sex_filtered <- ggplot(prev_sex_year, aes(year, Olifetime, colour = sex))
     plot.title      = element_text(face = "bold", size = 18, hjust = 0.5),
     legend.position = "right"
   )
-ggsave("output/ch5/ch5_020_prev_sex_filtered.pdf", p_prev_sex_filtered, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prev_sex_filtered.pdf"), p_prev_sex_filtered, width = 8, height = 6)
 # ------------ Display together --------------------------------
 (p_incidence | p_prev_tot) / (p_prev_age | p_prev_sex)
 
@@ -685,7 +686,7 @@ p_incidence_rate_sex <- ggplot(rate_df, aes(year, rate_per_100, colour = sex, gr
     plot.title      = element_text(face = "bold", size = 18, hjust = 0.5),
     legend.position = "right"
   )
-ggsave("output/ch5/ch5_020_incidence_rate_sex.pdf", p_incidence_rate_sex, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_incidence_rate_sex.pdf"), p_incidence_rate_sex, width = 8, height = 6)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -740,7 +741,7 @@ inc_map <- ggplot(map_data_incidence) +
   )
 
 print(inc_map)
-ggsave("output/ch5/ch5_020_incidence_map.pdf", inc_map, width = 8, height = 7)
+ggsave(file.path(fig_dir, "ch5_020_incidence_map.pdf"), inc_map, width = 8, height = 7)
 
 # ──────────────────────────────────────────────────────────────
 #  Incidence rate per 1000 children MAP
@@ -794,13 +795,13 @@ rate_map <- ggplot(map_data_rate) +
   )
 
 print(rate_map)
-ggsave("output/ch5/ch5_020_orphan_rate_map.pdf", rate_map, width = 8, height = 7)
+ggsave(file.path(fig_dir, "ch5_020_orphan_rate_map.pdf"), rate_map, width = 8, height = 7)
 
 
 # ──────────────────────────────────────────────────────────────
 #  MPI MAP
 # ──────────────────────────────────────────────────────────────
-mpi <- readRDS("input-data-processed/index_grouped_mun.RDS")
+mpi <- readRDS(marg_file("index_grouped_mun"))
 mpi <- mpi |> 
   filter(year == 2020) |>
   left_join(
@@ -846,7 +847,7 @@ map_mpi <- ggplot(mpi) +
 
 
 print(map_mpi)
-ggsave("output/ch5/ch5_020_mpi_map.pdf", map_mpi, width = 8, height = 7)
+ggsave(file.path(fig_dir, "ch5_020_mpi_map.pdf"), map_mpi, width = 8, height = 7)
 
 # ──────────────────────────────────────────────────────────────
 #  Lineplot standardized fertility rate in 2023
@@ -897,7 +898,7 @@ p_std_fert_rate <- ggplot(std_raw_year, aes(year, fertility_rate, group = sex, c
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5)
   )
-ggsave("output/ch5/ch5_020_std_fert_rate.pdf", p_std_fert_rate, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_std_fert_rate.pdf"), p_std_fert_rate, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Standardized fertility rate MAP
@@ -950,7 +951,7 @@ fert_map <- ggplot(fert_map) +
     plot.title      = element_text(face = "bold", size = 14),
     plot.subtitle   = element_text(size = 10)
   )
-ggsave("output/ch5/ch5_020_std_fert_map.pdf", fert_map, width = 8, height = 7)
+ggsave(file.path(fig_dir, "ch5_020_std_fert_map.pdf"), fert_map, width = 8, height = 7)
 
 # ──────────────────────────────────────────────────────────────
 #  Lineplot standardized mortality rate in 2023
@@ -1005,7 +1006,7 @@ p_std_mort_rate <- ggplot(std_raw_mort_year, aes(year, mortality_rate, group = s
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5)
   )
-ggsave("output/ch5/ch5_020_std_mort_rate.pdf", p_std_mort_rate, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_std_mort_rate.pdf"), p_std_mort_rate, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Standardized mortality rate map in 2023
@@ -1060,7 +1061,7 @@ mort_map <- ggplot(mort_map) +
   )
 
 print(mort_map)
-ggsave("output/ch5/ch5_020_std_mort_map.pdf", mort_map, width = 8, height = 7)
+ggsave(file.path(fig_dir, "ch5_020_std_mort_map.pdf"), mort_map, width = 8, height = 7)
 map_mpi | inc_map
 (map_mpi | inc_map) / (fert_map | mort_map)
 (map_mpi | rate_map) / (fert_map | mort_map)
@@ -1084,7 +1085,7 @@ p_prevalence_total <- ggplot(preval_plot, aes(year, Olifetime)) +
   theme(
     plot.title = element_text(face = "bold", size = 18, hjust = 0.5)
   )
-ggsave("output/ch5/ch5_020_prevalence_2010_2023.pdf", p_prevalence_total, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prevalence_2010_2023.pdf"), p_prevalence_total, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Orphanhood prevalence in 2023
@@ -1120,7 +1121,7 @@ p_prevalence_rate_sex <- ggplot(orphans_rate, aes(x = year, y = rate_per_100, co
                                     fill = NA,
                                     linewidth = 0.7),
         panel.grid = element_blank())
-ggsave("output/ch5/ch5_020_prevalence_rate_sex.pdf", p_prevalence_rate_sex, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prevalence_rate_sex.pdf"), p_prevalence_rate_sex, width = 8, height = 6)
 
 # ──────────────────────────────────────────────────────────────
 #  Orphanhood prevalence in 2023
@@ -1179,7 +1180,7 @@ p_prevalence_rate_age <- ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_1
                                     fill = NA,
                                     linewidth = 0.7),
         panel.grid = element_blank())
-ggsave("output/ch5/ch5_020_prevalence_rate_age.pdf", p_prevalence_rate_age, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_prevalence_rate_age.pdf"), p_prevalence_rate_age, width = 8, height = 6)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1292,7 +1293,7 @@ plots <- lapply(x_vars, function(x) {
 
 # 4. Display the plots side-by-side (adjust ncol if you prefer)
 p_dotplots_corr <- wrap_plots(plots, ncol = 2)
-ggsave("output/ch5/ch5_020_dotplots_corr.pdf", p_dotplots_corr, width = 8, height = 6)
+ggsave(file.path(fig_dir, "ch5_020_dotplots_corr.pdf"), p_dotplots_corr, width = 8, height = 6)
 
 # 5. (Optional) print a tidy correlation table
 corr_tbl <- do.call(rbind, lapply(x_vars, function(x) {
@@ -1390,7 +1391,7 @@ corr_tbl <- as_tibble(as.table(cor_res$r), .name_repair = "minimal") |>
   mutate(p_adj_BH = p.adjust(p_value, method = "BH"))
 
 # Save if desired
-# write_csv(corr_tbl, "output/ch5/spearman_correlations_municipal.csv")
+# write_csv(corr_tbl, file.path(fig_dir, "spearman_correlations_municipal.csv"))
 
 # ---- 4) Spatial weights: contiguity neighbors (queen) ------------------------
 # Build neighbors; allow islands (zero-policy later)
@@ -1421,7 +1422,7 @@ globals <- lapply(unlist(vars), function(v) {
 }) |> bind_rows()
 
 # Save if desired
-# write_csv(globals, "output/ch5/global_morans_i.csv")
+# write_csv(globals, file.path(fig_dir, "global_morans_i.csv"))
 
 # ---- 6) Local Moran's I (LISA) for orphanhood rate ---------------------------
 x <- muni[[vars["orphan"]]] |> as.numeric()
@@ -1452,7 +1453,7 @@ muni$lisa_cluster <- factor(
 )
 
 # Save local results if desired
-# st_write(muni, "output/ch5/lisa_orphan_rate.gpkg", delete_dsn = TRUE)
+# st_write(muni, file.path(fig_dir, "lisa_orphan_rate.gpkg"), delete_dsn = TRUE)
 
 # ---- 7) LISA map (orphanhood rate) -------------------------------------------
 ggplot(muni) +

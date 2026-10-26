@@ -37,3 +37,43 @@ build_geo_info <- function(index) {
   geo$capital[geo$state_name == "Guanajuato" & geo$mun_name == "Victoria"] <- 0
   geo
 }
+
+# --- Marginalization variant switch -----------------------------------------
+# ORPHAN_MARG selects which group-level marginalization files the chapter 3/5
+# consumers read: "conapo" (default; ch2_060, CONAPO IMN 2010-2020) or "fw"
+# (ch2_061, fixed-weight index 1990-2020 from ch2_055). Figures for "fw" go to
+# a sibling "<dir>_fw" folder so both variants can be compared side by side.
+#   ORPHAN_MARG=fw pixi run Rscript scripts-R/ch3_010_...R
+marg_variant <- function() {
+  v <- Sys.getenv("ORPHAN_MARG", "conapo")
+  if (!v %in% c("conapo", "fw")) stop("ORPHAN_MARG must be 'conapo' or 'fw', not '", v, "'")
+  v
+}
+marg_file <- function(name) {
+  suffix <- if (marg_variant() == "fw") "_fw" else ""
+  f <- file.path("input-data-processed", paste0(name, suffix, ".RDS"))
+  if (!file.exists(f)) stop(f, " not found (variant '", marg_variant(), "'; run ",
+                            if (suffix == "") "ch2_060" else "ch2_061", ")")
+  f
+}
+marg_fig_dir <- function(dir) {
+  out <- if (marg_variant() == "fw") paste0(dir, "_fw") else dir
+  dir.create(out, recursive = TRUE, showWarnings = FALSE)
+  out
+}
+
+# Extend a group_id x year marginalization table to `years`, carrying the first
+# observed year backwards and the last forwards, ONLY into years the table does
+# not already have. Replaces an inline bind_rows(2010 -> 1990:2009, 2020 ->
+# 2021:2023) that assumed coverage started in 2010 and would duplicate rows (and
+# so double-count events in the join) for an index that already covers 1990.
+extend_marg_years <- function(index, years) {
+  index <- dplyr::mutate(index, year = as.integer(year))
+  all_years <- sort(union(unique(index$year), as.integer(years)))
+  index |>
+    tidyr::complete(group_id, year = all_years) |>
+    dplyr::group_by(group_id) |>
+    dplyr::arrange(year, .by_group = TRUE) |>
+    tidyr::fill(-c(group_id, year), .direction = "downup") |>
+    dplyr::ungroup()
+}

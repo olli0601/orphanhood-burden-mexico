@@ -21,7 +21,8 @@ library(foreign)
 library(Polychrome)
 library(sf)
 
-fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+source("R/marginalization.R")
+fig_dir <- marg_fig_dir("output/ch3")  # output/ch3_fw when ORPHAN_MARG=fw
 
 ################################################################################
 
@@ -122,8 +123,8 @@ ggsave(file.path(fig_dir, "ch3_040_deaths_by_reg_year.pdf"), p_deaths_by_reg_yea
 #------------- Interaction between delays and other covariates -----------------
 
 ################################################################################
-mpi <- readRDS("input-data-processed/mpi_imputed.RDS")
-mpi_classified <- readRDS("input-data-processed/index_grouped_mun.RDS")
+mpi <- readRDS(marg_file("mpi_imputed"))
+mpi_classified <- readRDS(marg_file("index_grouped_mun"))
 
 delay_df <- deaths_grouped_mun %>%
   sf::st_drop_geometry() %>%   # delay_df is used only for non-spatial summaries/plots;

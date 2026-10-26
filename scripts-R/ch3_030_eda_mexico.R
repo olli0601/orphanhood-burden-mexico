@@ -25,7 +25,8 @@ library(purrr)
 source("R/rates.R")  # Adjust path if needed
 
 # --- 1c. Output directory for figures ---
-fig_dir <- "output/ch3"; dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+source("R/marginalization.R")
+fig_dir <- marg_fig_dir("output/ch3")  # output/ch3_fw when ORPHAN_MARG=fw
 
 # --- 2. Load datasets ---
 # Adjust file paths if needed
@@ -34,7 +35,7 @@ deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS") |>
   filter(!age %in% 1:15)
 population <- readRDS("input-data-processed/population_grouped_mun.RDS")|>
   filter(!age %in% c("00-04", "05-09", "10-14"))
-marg_index <- readRDS("input-data-processed/index_grouped_mun.RDS")
+marg_index <- readRDS(marg_file("index_grouped_mun"))
 # Urban/rural per grouped municipality (built in ch2_060 from IMM small_towns_pct).
 rural_urban <- readRDS("input-data-processed/rural_urban_area.RDS") |>
   dplyr::select(group_id, area_type)
