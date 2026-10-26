@@ -51,6 +51,11 @@ required_files <- c(
   "IMM 2020" = file.path(raw, "marginalization", "IMM_2020.xls"),
   "IMM 2015" = file.path(raw, "marginalization", "IMM_DP2_2015.xlsx"),
   "IMM 2010" = file.path(raw, "marginalization", "IMM_DP2_2010.xlsx"),
+  "IMM 1990-2015" = file.path(raw, "marginalization", "Base_Indice_de_marginacion_municipal_90-15.csv"),
+  "census ITER 2020" = file.path(raw, "census", "iter_00_cpv2020", "conjunto_de_datos",
+                                 "conjunto_de_datos_iter_00CSV20.csv"),
+  "census ITER 2010" = file.path(raw, "census", "iter_00_cpv2010", "conjunto_de_datos",
+                                 "iter_00_cpv2010.csv"),
   "GADM ADM2 geometries" = file.path(raw, "geometries", "gadm41_MEX_2.json"))
 for (lbl in names(required_files)) {
   f <- required_files[[lbl]]
@@ -144,8 +149,8 @@ if (!is.null(pop) && "population" %in% names(pop)) {
 # --- 5. the two distinct `99` sentinels ------------------------------------
 # Keep both visible: one is an unknown occurrence YEAR in the two-digit-year
 # files (dropped by load_year_panels); the other is unknown parental AGE in the
-# INEGI microdata, which falls out of preprocess_fertility()'s 15-64/15-84
-# filter without ever being counted. They are unrelated and easily conflated.
+# INEGI microdata, which preprocess_fertility() keeps as age = NA in the panels
+# and load_birth_panels() redistributes. They are unrelated and easily conflated.
 note("== sentinels and ranges ==")
 for (nm in c("births.RDS", "deaths.RDS")) {
   f <- file.path(proc, nm)
@@ -156,9 +161,19 @@ for (nm in c("births.RDS", "deaths.RDS")) {
        min(d$year_reg, na.rm = TRUE), max(d$year_reg, na.rm = TRUE),
        sum(d$year == 99, na.rm = TRUE))
 }
-note("  [info] unknown parental age (INEGI code 99) is dropped upstream by")
-note("         preprocess_fertility()'s age filter and is NOT counted anywhere;")
-note("         see docs/audit/thesis_vs_code_backlog.md.")
+fert_files <- list.files(file.path(proc, "fertility datasets"), pattern = "[.]RDS$", full.names = TRUE)
+if (length(fert_files)) {
+  na_age <- dplyr::bind_rows(lapply(fert_files, function(f) {
+    d <- readRDS(f)
+    data.frame(sex = d$sex, unknown = ifelse(is.na(d$age), d$births, 0), births = d$births)
+  })) |> dplyr::group_by(sex) |>
+    dplyr::summarise(unknown = sum(unknown), births = sum(births), .groups = "drop")
+  for (i in seq_len(nrow(na_age)))
+    note("  [info] fertility panels: %s births (%.2f%%) with unknown %s age (INEGI 99), kept as age = NA",
+         format(na_age$unknown[i], big.mark = ","), 100 * na_age$unknown[i] / na_age$births[i],
+         ifelse(na_age$sex[i] == "female", "mother's", "father's"))
+  note("         and redistributed across age bands by load_birth_panels().")
+}
 
 # --- verdict ---------------------------------------------------------------
 if (length(fails)) {

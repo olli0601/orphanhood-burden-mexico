@@ -36,7 +36,7 @@ fig_dir <- "output/ch2"; dir.create(fig_dir, recursive = TRUE, showWarnings = FA
 # start from input-data-processed/ without the raw files. (To regenerate from
 # raw instead, loop the INEGI files through preprocess_fertility().)
 # Run ch1_015_bootstrap_from_processed.R first.
-fert_panel <- load_year_panels("fertility datasets")
+fert_panel <- load_birth_panels()   # unknown parental age (99) redistributed
 
 ## BARPLOT 
 # Get all objects whose names start with "mort_"

@@ -65,29 +65,39 @@ preprocess_fertility <- function(file) {
       mun   = paste0(state, mun)
     )
   
-  # 3. Process female births (age groups 15–64)
+  # 3. Process female births (ages 15–50)
+  #    INEGI top-codes mother's age at 50 (catalogue edad_mama_nacimiento: 50,
+  #    then 99), so no record is older than 50 and the "50-54" band holds age 50
+  #    only, i.e. 50+. The bound was 64, copied from US orphanhood work; that
+  #    implied a 51-64 range the data cannot contain.
+  #    Unknown parental age (INEGI code 99) is KEPT as age = NA, as mortality does
+  #    for unknown-age deaths. It used to fall out of the range filter uncounted;
+  #    it is now spread over the age bands by redistribute_unknown_age()
+  #    (R/load_year_panels.R) when the panels are loaded.
+  band <- function(age) dplyr::if_else(
+    age == 99, NA_character_,
+    paste0(15 + 5 * floor((age - 15) / 5), "-", 19 + 5 * floor((age - 15) / 5))
+  )
   births_f <- df |>
     select(mun, year, age_mother) |>
     mutate(age = as.numeric(age_mother)) |>
-    filter(age >= 15, age <= 64) |>
-    mutate(age = paste0(
-      15 + 5 * floor((age - 15) / 5), "-", 
-      19 + 5 * floor((age - 15) / 5)
-    )) |>
+    filter(age == 99 | (age >= 15 & age <= 50)) |>
+    mutate(age = band(age)) |>
     select(year, age, mun) |>
     mutate(sex = "female")
   
-  # 4. Process male births (age groups 15–84)
+  # 4. Process male births (age groups 15–84, plus unknown = NA)
   births_m <- df |>
     select(mun, year, age_father) |>
     mutate(age = as.numeric(age_father)) |>
-    filter(age >= 15, age <= 84) |>
-    mutate(age = paste0(
-      15 + 5 * floor((age - 15) / 5), "-", 
-      19 + 5 * floor((age - 15) / 5)
-    )) |>
+    filter(age == 99 | (age >= 15 & age <= 84)) |>
+    mutate(age = band(age)) |>
     select(year, age, mun) |>
     mutate(sex = "male")
+  
+  message(sprintf(
+    "preprocess_fertility: %d births with unknown mother's age and %d with unknown father's age kept as age = NA (of %d records).",
+    sum(is.na(births_f$age)), sum(is.na(births_m$age)), nrow(df)))
   
   # 5. Combine female and male births, aggregate counts
   births_final <- bind_rows(births_f, births_m) |>
@@ -141,7 +151,7 @@ preprocess_fertility_long <- function(file) {
   births_f <- df |>
     select(mun, year, age_mother) |>
     mutate(age = as.numeric(age_mother)) |>
-    filter(age >= 15, age <= 64) |>
+    filter(age >= 15, age <= 50) |>   # INEGI top-codes mothers at 50; see preprocess_fertility()
     select(year, age, mun) |>
     mutate(sex = "female")
   
@@ -233,7 +243,7 @@ preprocess_fertility_day <- function(file) {
       sex = "female",
       age = as.numeric(age_mother)
     ) |>
-    dplyr::filter(dplyr::between(age, 15, 64)) |>
+    dplyr::filter(dplyr::between(age, 15, 50)) |>   # mothers top-coded at 50
     dplyr::mutate(
       age = paste0(
         15 + 5 * floor((age - 15) / 5), "-", 
@@ -364,7 +374,7 @@ preprocess_fertility_month <- function(file) {
       dplyr::transmute(
         mun, year_occ, month_occ, year_reg, month_reg,
         sex  = "female",
-        age  = make_band(age_mother, 64)
+        age  = make_band(age_mother, 50)   # mothers top-coded at 50
       ),
     df |>
       dplyr::transmute(

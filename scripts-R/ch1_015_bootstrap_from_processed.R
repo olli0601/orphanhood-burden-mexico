@@ -34,15 +34,17 @@ proc <- "input-data-processed"
 # to preserve exactly what was there before, rather than silently dropping rows
 # from analyses that have been reading them.
 
-load_years <- function(subdir, value_col, year_min = 1985, year_max = 2024) {
-  load_year_panels(subdir, dir = proc) |>
+load_years <- function(panels, value_col, year_min = 1985, year_max = 2024) {
+  panels |>
     mutate(year = as.integer(year), year_reg = as.integer(year_reg)) |>
     filter(year >= year_min & year <= year_max) |>
     group_by(year, sex, age, mun, year_reg) |>
     summarise("{value_col}" := sum(.data[[value_col]]), .groups = "drop")
 }
-births <- load_years("fertility datasets", "births")
-deaths <- load_years("mortality datasets", "deaths", year_min = -Inf)
+# Births: unknown parental age (code 99) redistributed across age bands, see
+# redistribute_unknown_age() in R/load_year_panels.R.
+births <- load_years(load_birth_panels(dir = proc), "births")
+deaths <- load_years(load_year_panels("mortality datasets", dir = proc), "deaths", year_min = -Inf)
 saveRDS(births, file.path(proc, "births.RDS"))
 saveRDS(deaths, file.path(proc, "deaths.RDS"))
 cat(sprintf("births: %d rows (%d-%d) | deaths: %d rows (%d-%d)\n",
