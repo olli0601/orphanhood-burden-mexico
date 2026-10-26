@@ -414,9 +414,10 @@ run_sweep <- function(years, label) {
 
     rm_ <- suppressMessages(compute_std_mort_rate(pm, unit_col = "group_id", std_pop = std_mort))
     rf_ <- suppressMessages(compute_std_fert_rate(pf, unit_col = "group_id", std_pop = std_fert))
-    # Both-sex rate: p_nat_total spans both sexes, so the two sex rows sum to it.
-    rm_both <- rm_ |> group_by(group_id, year) |>
-      summarise(std_mort_rate = sum(std_mort_rate), sex = "both", .groups = "drop")
+    # Both-sex rate: weights normalised over both sexes (per-sex rows are now
+    # within-sex rates, so they no longer sum to it).
+    rm_both <- suppressMessages(compute_std_mort_rate(pm, unit_col = "group_id",
+                                                      std_pop = std_mort, by_sex = FALSE))
     rm_all <- bind_rows(rm_, rm_both)
 
     rbar_m <- rm_both |> group_by(group_id) |> summarise(mean_rate = mean(std_mort_rate), .groups = "drop")

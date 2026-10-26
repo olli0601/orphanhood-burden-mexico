@@ -327,12 +327,10 @@ mort_mun <- mort %>%
 # population with sum() over a frame still multiplied by year_reg. This helper is
 # the one ch2_020 and Chapter 3 use, and it reports what it drops.
 #
-# Summing the two sexes is the correct both-sex standardised death rate here:
-# p_nat_total spans both sexes, so the per-sex values are partial sums of one
-# rate. (For FERTILITY the same sum would double-count every birth — see ch2_050.)
-std_all <- compute_std_mort_rate(mort_mun, unit_col = "mun") %>%
-  group_by(mun, year) %>%
-  summarise(std_mort_rate = sum(std_mort_rate), .groups = "drop") %>%
+# Both-sex standardised death rate (by_sex = FALSE: one weight total over both
+# sexes). For FERTILITY a both-sex rate would double-count every birth — see ch2_050.
+std_all <- compute_std_mort_rate(mort_mun, unit_col = "mun", by_sex = FALSE) %>%
+  dplyr::select(-sex) %>%
   left_join(y = geo_info[, c("mun", "capital")], by = "mun") %>%
   left_join(y = index, by = "mun") %>%
   mutate(capital = factor(capital)) %>%
@@ -369,7 +367,10 @@ ggsave(file.path(fig_dir, "ch2_040_std_rate_multiyear.pdf"), p_raw_pts, width = 
 #------------------------------------------------------------------------------
 ######
 #First: group by year, sex and age
-mort_national <- mort |> group_by(year, age, sex)|> summarise(deaths = sum(deaths), population = sum(population), .groups = "drop")
+# collapse_year_reg(): `mort` has one row per registration year with the cell's
+# population repeated, so summing population directly counted it once per row.
+mort_national <- mort |> collapse_year_reg("deaths", keys = c("mun", "year", "sex", "age")) |>
+  group_by(year, age, sex)|> summarise(deaths = sum(deaths), population = sum(population), .groups = "drop")
 mort_national <- mort_national |> 
   # (removed) filter(!(sex == "female" & age %in% c("65-69","70-74","75-79")))
   # That line is copy-pasted from ch2_050, where dropping female 65-79 is a
@@ -383,7 +384,7 @@ mort_national <- mort_national |> drop_na()
 
 
 # Second: calculate the standardized deaths rate
-std_age_sex <- compute_national_std_rate_age_gender(mort_national)
+std_age_sex <- compute_national_std_rate_age_gender(mort_national, std_ref_population(population))
 std_age_sex <- std_age_sex %>% filter(year == 2023)
 
 

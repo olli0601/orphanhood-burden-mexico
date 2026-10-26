@@ -307,7 +307,10 @@ mort <- mort |>
   filter(!(sex == "male" & age == "80-84"))
 
 
+# collapse_year_reg(): `mort` has one row per registration year with the cell's
+# population repeated, so summing population directly counted it once per row.
 mort_national <- mort |> 
+  collapse_year_reg("tot_deaths") |>
   group_by(year, age, sex)|> 
   summarise(deaths = sum(tot_deaths, na.rm = TRUE), population = sum(population, na.rm = TRUE), .groups = "drop")
 
@@ -322,7 +325,7 @@ mort_national <- mort_national |> drop_na()
 
 
 # Second: calculate the standardized deaths rate
-std_age_sex <- compute_national_std_rate_age_gender(mort_national)
+std_age_sex <- compute_national_std_rate_age_gender(mort_national, std_ref_population(population_grouped_mun))
 std_age_sex <- std_age_sex %>% arrange(year, sex, age) %>% filter(year>=1990)
 
 # 2. Plot with ggplot

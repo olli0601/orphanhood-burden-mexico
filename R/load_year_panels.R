@@ -99,6 +99,27 @@ load_birth_panels <- function(dir = "input-data-processed", ...) {
   redistribute_unknown_age(load_year_panels("fertility datasets", dir = dir, ...))
 }
 
+# Collapse registration years: one row per cell, events summed over year_reg,
+# population kept once. Events frames with population joined on carry one row
+# per year_reg with the cell's population repeated on each, so summing
+# `population` over them (e.g. up to national) counts it once per row - 2x to
+# 19x for female fertility depending on the year. Call this before any such sum.
+# Stops if population is not constant within a cell, i.e. if the frame is not
+# what this assumes.
+collapse_year_reg <- function(df, count_col,
+                              keys = intersect(c("group_id", "mun", "year", "sex", "age"),
+                                               names(df))) {
+  out <- df |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(keys))) |>
+    dplyr::summarise(n_pop = dplyr::n_distinct(population),
+                     "{count_col}" := sum(.data[[count_col]], na.rm = TRUE),
+                     population = dplyr::first(population), .groups = "drop")
+  if (any(out$n_pop > 1))
+    stop("collapse_year_reg: population varies within ", sum(out$n_pop > 1),
+         " cells of ", paste(keys, collapse = " x "), ".")
+  dplyr::select(out, -n_pop)
+}
+
 # Registration delay (occurrence -> registration), with an optional bucketed
 # factor capping at `max_delay`+. bucket = FALSE returns the raw numeric delay.
 add_delay <- function(df, max_delay = 5, bucket = TRUE) {

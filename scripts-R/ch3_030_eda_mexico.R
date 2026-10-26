@@ -36,6 +36,9 @@ deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS") |>
 population <- readRDS("input-data-processed/population_grouped_mun.RDS")|>
   filter(!age %in% c("00-04", "05-09", "10-14"))
 marg_index <- readRDS(marg_file("index_grouped_mun"))
+# Reference population for the by-age standardised rates: 2020, from the
+# population table (not the events frames, which repeat it per year_reg).
+std_ref <- std_ref_population(population)
 # Urban/rural per grouped municipality (built in ch2_060 from IMM small_towns_pct).
 rural_urban <- readRDS("input-data-processed/rural_urban_area.RDS") |>
   dplyr::select(group_id, area_type)
@@ -53,7 +56,7 @@ fertility <- births %>%
   drop_na()
 
 std_fert <- compute_std_fert_rate(fertility)
-std_fert_age <- compute_std_rate_age_gender(fertility)
+std_fert_age <- compute_std_rate_age_gender(fertility, std_ref)
 
 set.seed(123) # For reproducibility
 sampled_ids <- sample(unique(std_fert$group_id), 9)
@@ -138,7 +141,7 @@ p_area
 ggsave(file.path(fig_dir, "ch3_030_fert_age_composition_area.pdf"), p_area, width = 12, height = 8)
 
 #------------------------------------
-std_nat <- compute_national_std_rate_age_gender(fertility)
+std_nat <- compute_national_std_rate_age_gender(fertility, std_ref)
 
 std_nat <- std_nat %>% arrange(year, sex, age) %>% filter(year>=1990)
 
@@ -189,10 +192,10 @@ mortality <- mortality %>%
 
 # --- 5. Calculate standardised rates ---
 # Mortality (municipal)
-std_mort_mun <- compute_std_rate_age_gender(mortality)
+std_mort_mun <- compute_std_rate_age_gender(mortality, std_ref)
 # Mortality (national)
 
-std_mort_nat <- compute_national_std_rate_age_gender(mortality)
+std_mort_nat <- compute_national_std_rate_age_gender(mortality, std_ref)
 std_mort_nat <- std_mort_nat %>% arrange(year, sex, age) %>% filter(year>=1990)
 
 # 2. Plot with ggplot

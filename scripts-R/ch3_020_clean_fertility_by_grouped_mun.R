@@ -221,7 +221,10 @@ fert$year <- as.character(fert$year)
 fert <- fert |>
   tidyr::unnest(cols = c(tot_births, population))
 
+# collapse_year_reg(): `fert` has one row per registration year with the cell's
+# population repeated, so summing population directly counted it once per row.
 fert_national <- fert |>
+  collapse_year_reg("tot_births") |>
   group_by(year, age, sex) |>
   summarise(
     births = sum(tot_births, na.rm = TRUE),
@@ -240,7 +243,7 @@ fert_national$fert_rate <- fert_national$births / fert_national$population
 fert_national <- fert_national |> drop_na()
 
 # Second: calculate the standardized deaths rate
-std_age_sex <- compute_national_std_rate_age_gender(fert_national)
+std_age_sex <- compute_national_std_rate_age_gender(fert_national, std_ref_population(population_grouped_mun))
 std_age_sex <- std_age_sex %>% arrange(year, sex, age)
 
 # 2. Plot with ggplot

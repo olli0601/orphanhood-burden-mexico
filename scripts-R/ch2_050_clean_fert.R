@@ -255,7 +255,7 @@ fert_national <- fert_national |> drop_na()
 
 
 # Second: calculate the standardized deaths rate
-std_age_sex <- compute_national_std_rate_age_gender(fert_national)
+std_age_sex <- compute_national_std_rate_age_gender(fert_national, std_ref_population(population))
 std_age_sex <- std_age_sex %>% filter(year == 2023)
 
 # (removed) a duplicate of the fertility plot below, saved as
