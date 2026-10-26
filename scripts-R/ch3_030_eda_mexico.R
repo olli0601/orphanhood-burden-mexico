@@ -179,6 +179,12 @@ mortality <- deaths %>%
   ) %>%
   select(-tot_deaths)
 
+# Thesis Fig 3 (national by-age mortality, captioned 1990-2023) is computed
+# HERE, before the 2010-2020 filter below. It used to be computed after it, so
+# the figure only covered 2010-2020, unlike its companion Fig 2 (fertility).
+std_mort_nat <- compute_national_std_rate_age_gender(mortality, std_ref)
+std_mort_nat <- std_mort_nat %>% arrange(year, sex, age) %>% filter(year>=1990)
+
 # 4c. Add marginalization and urban/rural info for summary/plots if needed
 fertility <- fertility %>%
   filter(year >=2010 & year <=2020) %>%
@@ -193,10 +199,7 @@ mortality <- mortality %>%
 # --- 5. Calculate standardised rates ---
 # Mortality (municipal)
 std_mort_mun <- compute_std_rate_age_gender(mortality, std_ref)
-# Mortality (national)
-
-std_mort_nat <- compute_national_std_rate_age_gender(mortality, std_ref)
-std_mort_nat <- std_mort_nat %>% arrange(year, sex, age) %>% filter(year>=1990)
+# Mortality (national): computed above, before the 2010-2020 filter.
 
 # 2. Plot with ggplot
 p_std_mort_age_year <- ggplot(std_mort_nat, aes(x = age, y = std_rate, color = sex, group = sex)) +
@@ -296,11 +299,25 @@ ggsave(file.path(fig_dir, "ch3_030_std_mort_national.pdf"), p_std_mort_nat, widt
 
 # --- 8. Socioeconomic and demographic relationships ---
 # Correlation between fertility/mortality rates and marginalization, urban/rural
-cor_fert_marg <- cor(fertility$fert_rate, fertility$IMN, use = "complete.obs")
-cor_mort_marg <- cor(mortality$mort_rate, mortality$IMN, use = "complete.obs")
+# Was cor(fert_rate, IMN) over all rows, pooling age bands, sexes and
+# registration-year slices: age dominates the rates, so that number mostly
+# measured age composition. Now: age-standardised rates (per woman for
+# fertility, mother rows; both sexes for mortality), one value per unit, and
+# the correlation with IMN taken across units within each year.
+# IMN runs backwards: NEGATIVE correlation = more marginalized, higher rate.
+std_f_unit <- compute_std_fert_rate(filter(fertility, sex == "female"))
+std_m_unit <- compute_std_mort_rate(mortality, by_sex = FALSE)
+imn_unit <- distinct(fertility, group_id, year, IMN)
+cor_by_year <- function(std, col) std |>
+  mutate(year = as.integer(as.character(year))) |>
+  inner_join(mutate(imn_unit, year = as.integer(as.character(year))), by = c("group_id", "year")) |>
+  group_by(year) |>
+  summarise(r = cor(.data[[col]], IMN, use = "complete.obs"), units = n(), .groups = "drop")
+cor_fert_marg <- cor_by_year(std_f_unit, "std_fert_rate")
+cor_mort_marg <- cor_by_year(std_m_unit, "std_mort_rate")
 
-cat("Correlation between fertility rate and marginalization index:", cor_fert_marg, "\n")
-cat("Correlation between mortality rate and marginalization index:", cor_mort_marg, "\n")
+cat("Correlation across units, age-standardised fertility (per woman) vs IMN, by year:\n"); print(as.data.frame(cor_fert_marg))
+cat("Correlation across units, age-standardised mortality (both sexes) vs IMN, by year:\n"); print(as.data.frame(cor_mort_marg))
 
 # Compare rates by urban/rural
 fertility %>%

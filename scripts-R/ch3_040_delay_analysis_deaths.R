@@ -34,7 +34,7 @@ deaths <- readRDS("input-data-processed/deaths.RDS")
 # 1. Aggregate total deaths by occurrence year and reporting year
 deaths_summary <- deaths %>%
   group_by(year, year_reg) %>%
-  summarise(total_deaths = n(), .groups = "drop") %>%
+  summarise(total_deaths = sum(deaths), .groups = "drop") %>%   # events, not panel rows (was n())
   mutate(
     delay = as.numeric(year_reg) - as.numeric(year),
     delay = ifelse(delay > 5, "5+", as.character(delay)),
@@ -146,7 +146,9 @@ delay_df_GM <- delay_df_GM %>%
   summarise(
     IMN = mean(IMN, na.rm = TRUE),
     GM = dplyr::first(GM),
-    avg_delay = mean(delay, na.rm = TRUE),
+    # Event-weighted (was an unweighted mean over panel cells, inconsistent with
+    # the weighted.mean() used further down this file).
+    avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -163,7 +165,7 @@ p_delay_by_marg <- ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
   theme_minimal() +
   labs(
     x = "Marginalization Category",
-    y = "Average Delay (days)",
+    y = "Average Delay (years)",
     title = "Registration Delay by Marginalization Category"
   )
 ggsave(file.path(fig_dir, "ch3_040_delay_by_marg.pdf"), p_delay_by_marg, width = 8, height = 6)
@@ -176,7 +178,7 @@ p_delay_by_marg_year <- ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
   theme_minimal() +
   labs(
     x = "Marginalization Category",
-    y = "Average Delay (days)",
+    y = "Average Delay (years)",
     title = "Registration Delay by Marginalization Category and Year"
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -189,7 +191,7 @@ p_delay_vs_imn <- ggplot(delay_df_GM, aes(x = IMN, y = avg_delay)) +
   geom_smooth(method = "lm", se = TRUE, color = "blue") +
   labs(
     x = "Marginalization Index (IMN)",
-    y = "Average Delay (days)",
+    y = "Average Delay (years)",
     title = "Delay vs. Marginalization Index"
   ) +
   theme_minimal()
@@ -200,7 +202,7 @@ p_delay_by_marg_cat <- ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
   geom_boxplot(fill = "skyblue") +
   labs(
     x = "Marginalization Category",
-    y = "Average Delay (days)",
+    y = "Average Delay (years)",
     title = "Average Delay by Marginalization Category"
   ) +
   theme_minimal()
@@ -261,7 +263,7 @@ p_delay_hist_by_sex <- ggplot(delay_df, aes(x = delay, weight = tot_deaths)) +
   facet_wrap(~ sex) +
   labs(
     title = "Delay Distribution by Gender",
-    x = "Delay (days)",
+    x = "Delay (years)",
     y = "Weighted Count"
   ) +
   theme_minimal()
@@ -273,7 +275,7 @@ p_delay_hist_by_sex_age <- ggplot(delay_df, aes(x = delay, fill = sex, weight = 
   geom_histogram(alpha = 0.6, position = "identity", bins = 30) +
   facet_wrap(~age) +
   labs(title = "Distribution of Reporting Delays by Gender and Age Group",
-       x = "Reporting Delay (Days)",
+       x = "Reporting Delay (years)",
        y = "Count") +
   theme_minimal()
 ggsave(file.path(fig_dir, "ch3_040_delay_hist_by_sex_age.pdf"), p_delay_hist_by_sex_age, width = 8, height = 6)
@@ -283,7 +285,7 @@ p_delay_box_by_age_sex <- ggplot(delay_df, aes(x = age, y = delay, fill = sex)) 
   geom_boxplot() +
   labs(title = "Reporting Delays by Age Group and Gender",
        x = "Age Group",
-       y = "Delay (Days)") +
+       y = "Delay (years)") +
   theme_minimal()
 ggsave(file.path(fig_dir, "ch3_040_delay_box_by_age_sex.pdf"), p_delay_box_by_age_sex, width = 8, height = 6)
 
@@ -291,13 +293,13 @@ ggsave(file.path(fig_dir, "ch3_040_delay_box_by_age_sex.pdf"), p_delay_box_by_ag
 library(dplyr)
 mean_delay_year <- delay_df %>%
   group_by(year, sex) %>%
-  summarize(mean_delay = mean(delay, na.rm = TRUE))
+  summarize(mean_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE), .groups = "drop")
 
 p_mean_delay_over_time <- ggplot(mean_delay_year, aes(x = year, y = mean_delay, color = sex)) +
   geom_line(linewidth = 1.2) +
   labs(title = "Mean Reporting Delay Over Time by Gender",
        x = "Year",
-       y = "Mean Delay (Days)") +
+       y = "Mean Delay (years)") +
   theme_minimal()
 ggsave(file.path(fig_dir, "ch3_040_mean_delay_over_time.pdf"), p_mean_delay_over_time, width = 8, height = 6)
 
@@ -351,7 +353,7 @@ if (exists("your_data") && exists("municipality_shapes")) {
     scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
     theme_minimal() +
     labs(
-      fill = "Avg. Delay (days)",
+      fill = "Avg. Delay (years)",
       title = "Average Death Registration Delay by Municipality"
     )
   ggsave(file.path(fig_dir, "ch3_040_delay_map_overall.pdf"), p_delay_map_overall, width = 8, height = 8)

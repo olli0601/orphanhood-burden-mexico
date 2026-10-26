@@ -39,6 +39,15 @@ describes something the code does not implement) · UNVERIFIABLE.
 
 ## Chapter 3 — EDA and registration delay
 
+> **2026-10-26 status.** Addressed in code: 3.1 (Fig 3 now 1990–2023), 3.6 (pooled
+> correlation replaced by per-year correlations of age-standardised rates), 3.7/3.8
+> (Figs 4/6 count events; births on mother rows), 3.9/3.10 (Figs 5/7 and a completeness
+> table added in `ch3_050`), 3.11/3.13/3.15/3.16 (Figs 8–11 added in `ch3_050`:
+> event-weighted unit-year means, CONAPO-derived `GM`, area type), 3.12 (days → years),
+> 3.17 (Figure 1 = `ch2_010_map_group_boundaries.pdf`). Still open: 3.2, 3.4, 3.5, 3.14
+> (2010–2020 window for Figs 8–11 is now stated in the subtitle), 3.18, and the
+> undefined "common exposure window" for Figs 5/7.
+
 | # | Thesis | Code | Verdict |
 |---|---|---|---|
 | 3.1 | Fig 3: "Standardized age-specific mortality rates … **1990–2023**" | `ch3_030:185` filters mortality to **2010–2020** before standardising. Figure 3 can only contain 11 panels, not 34. Fertility (Fig 2) *is* computed before the analogous filter, so the two "companion" figures do not cover the same period | INCONSISTENT |
