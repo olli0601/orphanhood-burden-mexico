@@ -1,5 +1,4 @@
 # Municipality aggregation/grouping helpers
-# Helper functions split from the former R/utils.R
 # =============================================================================
 
 #-------------------------------------------------------------------------------

@@ -1,39 +1,27 @@
 # =============================================================================
 # ch1_015_bootstrap_from_processed.R  ·  Chapter 1 — Bootstrap from processed data
-# Build the deterministic intermediates needed to start the pipeline from the
-# SUPPLIED per-year datasets (input-data-processed/{fertility,mortality}
-# datasets/) instead of the raw INEGI files. Produces the inputs that
-# Chapter 2 (municipality aggregation) and later chapters consume.
+# Municipal-level intermediates from the per-year panels, the CONAPO population
+# workbook and IMM 2020: the inputs Chapter 2 starts from.
 #
 # Reads : input-data-processed/{fertility,mortality} datasets/*.RDS,
 #         input-data-raw/population/00_Republica_mexicana/1_Grupo_Quinq_00_RM.xlsx,
 #         input-data-raw/marginalization/IMM_2020.xls
-# Writes: input-data-processed/{births, deaths, population, geo_info, marg_index}.RDS
-# Run    : after ch1_010 (raw download); before ch2_010.
+# Writes: input-data-processed/{births, deaths, population_mun_adult, marg_index_mun,
+#         geo_info_mun}.RDS
+# Run after: ch1_012 (or ch1_020); before ch2_010.
 # =============================================================================
 suppressMessages({
-  library(dplyr); library(tidyr); library(stringr); library(readxl); library(purrr)
-source("R/load_population.R")
-source("R/load_year_panels.R")
-source("R/marginalization.R")
+  library(dplyr)
+  source("R/load_population.R")
+  source("R/load_year_panels.R")
+  source("R/marginalization.R")
 })
 
 proc <- "input-data-processed"
 
-# --- 1. Combine supplied per-year files (original-municipality level) --------
-# Loading goes through load_year_panels(), the same helper ch2_040/ch2_050/ch2_060
-# use. This script used to inline its own version, which differed in one respect
-# that matters: it mapped the 2-digit occurrence year with 1900 + year for every
-# value, turning the `99` UNKNOWN-YEAR sentinel into a real occurrence year 1999.
-# That silently moved 28,346 deaths (registered 1990-1997) into 1999, where they
-# also implied a negative registration delay. load_year_panels() drops the
-# sentinel instead. Fertility is unaffected — no fert_* file carries a 99.
-# `year_min`: ch2_060 used to rewrite these two files with NO lower year bound,
-# and its version is the one that survived, so the deaths panel on disk spans
-# 1900-2024. ch2_060 no longer writes them, so the bound is set here — and set
-# to preserve exactly what was there before, rather than silently dropping rows
-# from analyses that have been reading them.
-
+# --- 1. Births and deaths, summed over duplicate cells ----------------------
+# Births 1985-2024 (unknown parental age redistributed); deaths keep every
+# occurrence year (back to 1900).
 load_years <- function(panels, value_col, year_min = 1985, year_max = 2024) {
   panels |>
     mutate(year = as.integer(year), year_reg = as.integer(year_reg)) |>
@@ -41,8 +29,6 @@ load_years <- function(panels, value_col, year_min = 1985, year_max = 2024) {
     group_by(year, sex, age, mun, year_reg) |>
     summarise("{value_col}" := sum(.data[[value_col]]), .groups = "drop")
 }
-# Births: unknown parental age (code 99) redistributed across age bands, see
-# redistribute_unknown_age() in R/load_year_panels.R.
 births <- load_years(load_birth_panels(dir = proc), "births")
 deaths <- load_years(load_year_panels("mortality datasets", dir = proc), "deaths", year_min = -Inf)
 saveRDS(births, file.path(proc, "births.RDS"))
@@ -51,20 +37,13 @@ cat(sprintf("births: %d rows (%d-%d) | deaths: %d rows (%d-%d)\n",
             nrow(births), min(births$year), max(births$year),
             nrow(deaths), min(deaths$year), max(deaths$year)))
 
-# --- 2. Population (from CONAPO quinquennial workbook) -----------------------
-# ADULT bands only (15-19 .. 75-79). ch2_060 writes the 0-79 version under
-# population_mun.RDS; these are different objects and no longer share a name.
+# --- 2. Population, adult bands 15-79 (ch2_060 writes the 0-79 population_mun) ---
 population <- load_population(keep_child = FALSE)
 saveRDS(population, file.path(proc, "population_mun_adult.RDS"))
 cat(sprintf("population_mun_adult: %d rows\n", nrow(population)))
 
-# --- 3. Marginalization index + geo_info (from CONAPO IMM 2020) --------------
-# Both are MUNICIPALITY-level. ch2_060's group-level counterparts are
-# index_grouped_mun.RDS and geo_info_mun_grouped.RDS — previously all four
-# collided on two names, so a file's meaning depended on how far the pipeline
-# had run.
+# --- 3. IMM 2020 and the municipality lookup -----------------------------------
 index <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
-index <- index[-1, ]
 saveRDS(index, file.path(proc, "marg_index_mun.RDS"))
 
 geo_info <- build_geo_info(index)

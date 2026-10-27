@@ -1,381 +1,127 @@
 # =============================================================================
 # ch3_040_delay_analysis_deaths.R  ·  Chapter 3 — Death registration-delay structure
-# Characterise DEATH reporting delays (delay distributions, cumulative
-# registration curves) and how they vary by marginalization and area type.
+# Death registration delays by sex, age and year, and against marginalization
+# (grade, index, regressions) across grouped municipalities.
 #
-# Reads : input-data-processed/{deaths, grouped_municipality_50000,
-#         aggregated_muni_50000, mpi_imputed, index_grouped_mun}.RDS
-# Writes: output/ch3/ (delay figures)
-# Run after: ch2_060, ch2_010
+# Reads : input-data-processed/{deaths, grouped_municipality_50000, aggregated_muni_50000,
+#         mpi_imputed[_fw], index_grouped_mun[_fw]}.RDS
+# Writes: output/ch3[_fw]/ch3_040_*.pdf
+# Run after: ch2_060 (ch2_061 for ORPHAN_MARG=fw)
 # =============================================================================
 
-library(dplyr)
-library(stringr)
-library(readr)
-library(readxl)
-library(readxl)
-library(tidyr)
-library(ggplot2)
-library(gridExtra)
-library(foreign)
-library(Polychrome)
+source("R/setup.R")
 library(sf)
+fig_dir <- marg_fig_dir("output/ch3")
 
-source("R/marginalization.R")
-fig_dir <- marg_fig_dir("output/ch3")  # output/ch3_fw when ORPHAN_MARG=fw
-
-################################################################################
-
-#------------------------ Reporting delays analysis ----------------------------
-
-################################################################################
 deaths <- readRDS("input-data-processed/deaths.RDS")
 
-# 1. Aggregate total deaths by occurrence year and reporting year
-deaths_summary <- deaths %>%
-  group_by(year, year_reg) %>%
-  summarise(total_deaths = sum(deaths), .groups = "drop") %>%   # events, not panel rows (was n())
-  mutate(
-    delay = as.numeric(year_reg) - as.numeric(year),
-    delay = ifelse(delay > 5, "5+", as.character(delay)),
-    delay = factor(delay, levels = c("0", "1", "2", "3", "4", "5", "5+"))
-  )
+# --- Registration delay -------------------------------------------------------------
+delays <- delay_summary(deaths, count = "deaths")
+save_fig(plot_delay_bars(filter(delays, year >= 1990), "year_reg", "total", delay_palette(delays$delay),
+                         x = "Year of Registration", y = "Total Deaths", fill = "Delay (Years)",
+                         title = "Total Deaths by Occurrence Year and Reporting Year"),
+         "ch3_040_deaths_by_reg_year.pdf")
 
+# --- Delay per grouped unit -------------------------------------------------------
+# Unmatched municipalities are kept here as group_id = NA.
+aggregated_muni_50000 <- readRDS("input-data-processed/aggregated_muni_50000.RDS")
+delay_df <- aggregate_to_grouped_mun(deaths, "deaths", out_col = "tot_deaths", drop_unmatched = FALSE) |>
+  filter(!(sex == "male" & is.na(age)), year >= 1990) |>
+  add_delay(bucket = FALSE)
 
-deaths_prop_reg <- deaths_summary %>%
-  group_by(year_reg) %>%
-  mutate(
-    prop_deaths = total_deaths / sum(total_deaths)
-  ) %>%
-  ungroup()
-
-deaths_prop_occ <- deaths_summary %>%
-  group_by(year) %>%
-  mutate(
-    prop_deaths = total_deaths / sum(total_deaths)
-  ) %>%
-  ungroup()
-
-# --------- GROUP BY THE NEW MUNICIPALITIES ---------------
-grouped_municipality_50000 <- readRDS("input-data-processed/grouped_municipality_50000.RDS")
-aggregated_muni_50000 <- readRDS(file = "input-data-processed/aggregated_muni_50000.RDS")
-
-deaths <- left_join(
-  deaths,
-  grouped_municipality_50000 %>% dplyr::select(mun, group_id),
-  by = "mun"
-)
-
-deaths_grouped_mun <- deaths |>
-  group_by(group_id, year, sex, age, year_reg)  |>
-  summarise(tot_deaths = sum(deaths), .groups = "drop") |>
-  filter(!(sex == "male" & is.na(age)))
-
-deaths_grouped_mun <- left_join(
-  deaths_grouped_mun, 
-  aggregated_muni_50000 %>% dplyr::select(group_id, geometry),
-  by="group_id")  %>%
-  st_as_sf()
-
-
-deaths_grouped_mun <- deaths_grouped_mun |>
-  filter(year >= 1990)
-
-
-################################################################################
-
-#---------------------------------- Plots --------------------------------------
-
-################################################################################
-delay_levels <- levels(factor(deaths_summary$delay))
-
-# Generate colors and assign names
-library(Polychrome)
-seed_colors <- c("#FF0000", "#0000FF", "#00FF00")
-# Polychrome::createPalette is stochastic: without a seed the delay-figure colours
-# change on every run, so these figures were never reproducible. Verified by
-# running an unmodified script twice and diffing the output.
-set.seed(20250815)
-my_colors <- createPalette(length(delay_levels), seedcolors = seed_colors)
-names(my_colors) <- delay_levels
-
-#---------- BARPLOT ------------
-## Total deaths
-p_deaths_by_reg_year <- ggplot(deaths_summary |> filter(year >=1990), aes(x = factor(year_reg), y = (total_deaths), fill = factor(delay))) +
-  geom_bar(stat = "identity") +
-  scale_fill_manual(values = my_colors) +
-  labs(
-    x = "Year of Registration",
-    y = "Total Deaths",
-    fill = "Delay (Years)",
-    title = "Total Deaths by Occurrence Year and Reporting Year"
-  ) +
-  theme_minimal()+
-  theme(
-    axis.text.x = element_text(angle = 90, vjust = 0.5),
-    panel.grid.major.y = element_line(color = "gray80", size = 0.3)
-  )
-ggsave(file.path(fig_dir, "ch3_040_deaths_by_reg_year.pdf"), p_deaths_by_reg_year, width = 8, height = 6)
-
-
-################################################################################
-
-#------------- Interaction between delays and other covariates -----------------
-
-################################################################################
-mpi <- readRDS(marg_file("mpi_imputed"))
-mpi_classified <- readRDS(marg_file("index_grouped_mun"))
-
-delay_df <- deaths_grouped_mun %>%
-  sf::st_drop_geometry() %>%   # delay_df is used only for non-spatial summaries/plots;
-  mutate(                       # the map plots re-join geometry from aggregated_muni_50000.
-    delay = as.numeric(year_reg) - as.numeric(year)
-  )
-
-
-long_deaths_df <- delay_df |>
-  uncount(weights = tot_deaths)
-
-
+# --- Delay vs marginalization grade (death-weighted unit-year means, 2010-2020) ---
 delay_df_GM <- delay_df |>
-  filter(year>=2010 & year<=2020)|>
-  left_join(mpi_classified, by = c("year", "group_id"))
+  filter(year >= 2010 & year <= 2020) |>
+  left_join(readRDS(marg_file("index_grouped_mun")), by = c("year", "group_id")) |>
+  group_by(group_id, year) |>
+  summarise(IMN = mean(IMN, na.rm = TRUE), GM = first(GM),
+            avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE), .groups = "drop") |>
+  mutate(GM = factor(GM, levels = c("Very Low", "Low", "Medium", "High", "Very High")))
 
-delay_df_GM <- delay_df_GM %>%
-  group_by(group_id, year) %>%
-  summarise(
-    IMN = mean(IMN, na.rm = TRUE),
-    GM = dplyr::first(GM),
-    # Event-weighted (was an unweighted mean over panel cells, inconsistent with
-    # the weighted.mean() used further down this file).
-    avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE),
-    .groups = "drop"
-  )
+marg_box <- function(fill, title) {
+  ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
+    geom_boxplot(fill = fill, color = "black") +
+    theme_minimal() +
+    labs(x = "Marginalization Category", y = "Average Delay (years)", title = title)
+}
+save_fig(marg_box("#69b3a2", "Registration Delay by Marginalization Category"), "ch3_040_delay_by_marg.pdf")
+save_fig(marg_box("#69b3a2", "Registration Delay by Marginalization Category and Year") +
+           facet_wrap(~ year) + theme(axis.text.x = element_text(angle = 45, hjust = 1)),
+         "ch3_040_delay_by_marg_year.pdf")
 
-
-
-# Ensure GM is an ordered factor
-delay_df_GM <- delay_df_GM %>%
-  mutate(
-    GM = factor(GM, levels = c("Very Low", "Low", "Medium", "High", "Very High"))
-  )
-# DEGREE OF MARGINALIZATION
-p_delay_by_marg <- ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
-  geom_boxplot(fill = "#69b3a2", color = "black") +
-  theme_minimal() +
-  labs(
-    x = "Marginalization Category",
-    y = "Average Delay (years)",
-    title = "Registration Delay by Marginalization Category"
-  )
-ggsave(file.path(fig_dir, "ch3_040_delay_by_marg.pdf"), p_delay_by_marg, width = 8, height = 6)
-
-
-# Boxplot faceted by year
-p_delay_by_marg_year <- ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
-  geom_boxplot(fill = "#69b3a2", color = "black") +
-  facet_wrap(~ year) +
-  theme_minimal() +
-  labs(
-    x = "Marginalization Category",
-    y = "Average Delay (years)",
-    title = "Registration Delay by Marginalization Category and Year"
-  ) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave(file.path(fig_dir, "ch3_040_delay_by_marg_year.pdf"), p_delay_by_marg_year, width = 8, height = 6)
-
-
-#---------------------------------------------------------------------------------
 p_delay_vs_imn <- ggplot(delay_df_GM, aes(x = IMN, y = avg_delay)) +
   geom_point(alpha = 0.5) +
   geom_smooth(method = "lm", se = TRUE, color = "blue") +
-  labs(
-    x = "Marginalization Index (IMN)",
-    y = "Average Delay (years)",
-    title = "Delay vs. Marginalization Index"
-  ) +
+  labs(x = "Marginalization Index (IMN)", y = "Average Delay (years)", title = "Delay vs. Marginalization Index") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_vs_imn.pdf"), p_delay_vs_imn, width = 8, height = 6)
-
+save_fig(p_delay_vs_imn, "ch3_040_delay_vs_imn.pdf")
 
 p_delay_by_marg_cat <- ggplot(delay_df_GM, aes(x = GM, y = avg_delay)) +
   geom_boxplot(fill = "skyblue") +
-  labs(
-    x = "Marginalization Category",
-    y = "Average Delay (years)",
-    title = "Average Delay by Marginalization Category"
-  ) +
+  labs(x = "Marginalization Category", y = "Average Delay (years)", title = "Average Delay by Marginalization Category") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_by_marg_cat.pdf"), p_delay_by_marg_cat, width = 8, height = 6)
+save_fig(p_delay_by_marg_cat, "ch3_040_delay_by_marg_cat.pdf")
 
-model <- lm(avg_delay ~ IMN + GM + factor(year), data = delay_df_GM)
-summary(model)
-#---------------------------------------------------------------------------------
+summary(lm(avg_delay ~ IMN + GM + factor(year), data = delay_df_GM))
 
-
-# INDEX OF MARGINALIZATION
-delay_df_mpi <- delay_df |>
-  filter(year>=2005) |>
-  left_join(mpi, by = c("group_id", "year"))
-
-municipality_summary <- delay_df_mpi |>
+# --- Delay vs interpolated index (death-weighted unit means, 2005+) --------------
+# mpi covers 2010-2020 only, so poverty_index averages the years where it exists.
+municipality_summary <- delay_df |>
+  filter(year >= 2005) |>
+  left_join(readRDS(marg_file("mpi_imputed")), by = c("group_id", "year")) |>
   group_by(group_id) |>
-  summarise(
-    avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE),
-    # Was first(mpi), with the comment "assuming it's constant per municipality".
-    # It is not constant - mpi_imputed is interpolated per year - and, worse,
-    # mpi only covers 2010-2020 while this frame starts at 2005, so the first
-    # row of every group is a 2005 row and first() returned NA for all 777
-    # units. poverty_index was then entirely NA and the lm below had 0 cases.
-    # Averaged over the years where mpi is defined instead. If a single
-    # reference year is wanted instead, that is a choice to make deliberately.
-    poverty_index = mean(mpi, na.rm = TRUE)
-  )
+  summarise(avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE),
+            poverty_index = mean(mpi, na.rm = TRUE))
 stopifnot(sum(is.finite(municipality_summary$poverty_index)) > 0.9 * nrow(municipality_summary))
 
 p_delay_vs_poverty <- ggplot(municipality_summary, aes(x = poverty_index, y = avg_delay)) +
   geom_point(alpha = 0.7) +
   geom_smooth(method = "lm", se = TRUE, color = "blue") +
-  labs(
-    title = "Average Delay vs. Poverty Index by Municipality",
-    x = "Poverty Index",
-    y = "Average Registration Delay (years)"
-  ) +
+  labs(title = "Average Delay vs. Poverty Index by Municipality", x = "Poverty Index",
+       y = "Average Registration Delay (years)") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_vs_poverty.pdf"), p_delay_vs_poverty, width = 8, height = 6)
+save_fig(p_delay_vs_poverty, "ch3_040_delay_vs_poverty.pdf")
 
-# Choose method depending on distribution/linearity
-cor_test_result <- tryCatch(cor.test(municipality_summary$poverty_index, municipality_summary$avg_delay, use = "complete.obs"), error = function(e) {message("ch3_040: cor.test skipped (", conditionMessage(e), ")"); NULL})
-
+cor_test_result <- tryCatch(cor.test(municipality_summary$poverty_index, municipality_summary$avg_delay),
+                            error = function(e) { message("ch3_040: cor.test skipped (", conditionMessage(e), ")"); NULL })
 if (!is.null(cor_test_result)) print(cor_test_result)
+summary(lm(avg_delay ~ poverty_index, data = municipality_summary))
 
-model <- lm(avg_delay ~ poverty_index, data = municipality_summary)
-
-summary(model)
-
-
-
-#Histogram of Reporting Delays by Gender
-library(ggplot2)
-# Boxplot: Delay by Gender
+# --- Delay by sex, age and year ------------------------------------------------------
 p_delay_hist_by_sex <- ggplot(delay_df, aes(x = delay, weight = tot_deaths)) +
   geom_histogram(bins = 10, fill = "#69b3a2") +
   facet_wrap(~ sex) +
-  labs(
-    title = "Delay Distribution by Gender",
-    x = "Delay (years)",
-    y = "Weighted Count"
-  ) +
+  labs(title = "Delay Distribution by Gender", x = "Delay (years)", y = "Weighted Count") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_hist_by_sex.pdf"), p_delay_hist_by_sex, width = 8, height = 6)
-
-
+save_fig(p_delay_hist_by_sex, "ch3_040_delay_hist_by_sex.pdf")
 
 p_delay_hist_by_sex_age <- ggplot(delay_df, aes(x = delay, fill = sex, weight = tot_deaths)) +
   geom_histogram(alpha = 0.6, position = "identity", bins = 30) +
-  facet_wrap(~age) +
+  facet_wrap(~ age) +
   labs(title = "Distribution of Reporting Delays by Gender and Age Group",
-       x = "Reporting Delay (years)",
-       y = "Count") +
+       x = "Reporting Delay (years)", y = "Count") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_hist_by_sex_age.pdf"), p_delay_hist_by_sex_age, width = 8, height = 6)
+save_fig(p_delay_hist_by_sex_age, "ch3_040_delay_hist_by_sex_age.pdf")
 
-#  Boxplot of Delay by Age Group and Gender
 p_delay_box_by_age_sex <- ggplot(delay_df, aes(x = age, y = delay, fill = sex)) +
   geom_boxplot() +
-  labs(title = "Reporting Delays by Age Group and Gender",
-       x = "Age Group",
-       y = "Delay (years)") +
+  labs(title = "Reporting Delays by Age Group and Gender", x = "Age Group", y = "Delay (years)") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_box_by_age_sex.pdf"), p_delay_box_by_age_sex, width = 8, height = 6)
+save_fig(p_delay_box_by_age_sex, "ch3_040_delay_box_by_age_sex.pdf")
 
-
-library(dplyr)
-mean_delay_year <- delay_df %>%
-  group_by(year, sex) %>%
-  summarize(mean_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE), .groups = "drop")
-
+mean_delay_year <- delay_df |>
+  group_by(year, sex) |>
+  summarise(mean_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE), .groups = "drop")
 p_mean_delay_over_time <- ggplot(mean_delay_year, aes(x = year, y = mean_delay, color = sex)) +
   geom_line(linewidth = 1.2) +
-  labs(title = "Mean Reporting Delay Over Time by Gender",
-       x = "Year",
-       y = "Mean Delay (years)") +
+  labs(title = "Mean Reporting Delay Over Time by Gender", x = "Year", y = "Mean Delay (years)") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_mean_delay_over_time.pdf"), p_mean_delay_over_time, width = 8, height = 6)
+save_fig(p_mean_delay_over_time, "ch3_040_mean_delay_over_time.pdf")
 
-
-delay_by_year <- delay_df |>
-  group_by(year, group_id) |>
-  summarise(
-    avg_delay = weighted.mean(delay, tot_deaths, na.rm = TRUE)
-  )
-
-if (exists("municipality_shapes")) {
-  municipality_yearly_map <- municipality_shapes |>
-    left_join(delay_by_year, by = "municipality_id")
-
-  p_delay_map_yearly <- ggplot(municipality_yearly_map) +
-    geom_sf(aes(fill = avg_delay)) +
-    facet_wrap(~ year) +
-    scale_fill_viridis_c() +
-    theme_minimal()
-  ggsave(file.path(fig_dir, "ch3_040_delay_map_yearly.pdf"), p_delay_map_yearly, width = 8, height = 8)
-} else {
-  message("ch3_040: skipping delay_map_yearly — object 'municipality_shapes' does not exist upstream")
-}
-
-if (exists("grouped_mun_50000")) {
-  p_group_boundaries <- ggplot() +
-    geom_sf(data = grouped_mun_50000, fill = NA, color = "grey70", size = 0.1) +
-    geom_sf(data = aggregated_muni_50000, fill = NA, color = "red", size = 0.5) +
-    theme_minimal() +
-    labs(title = "Group Boundaries Overlaid on Original Municipalities")
-  ggsave(file.path(fig_dir, "ch3_040_group_boundaries.pdf"), p_group_boundaries, width = 8, height = 8)
-} else {
-  message("ch3_040: skipping group_boundaries — object 'grouped_mun_50000' does not exist upstream")
-}
-
-#------------------
-# Average delay per municipality
-if (exists("your_data") && exists("municipality_shapes")) {
-  delay_summary <- your_data |>
-    group_by(municipality_id) |>
-    summarise(
-      avg_delay = weighted.mean(registration_delay, deaths, na.rm = TRUE),
-      total_deaths = sum(deaths, na.rm = TRUE)
-    )
-
-  municipality_map <- municipality_shapes |>
-    left_join(delay_summary, by = "municipality_id")
-
-  p_delay_map_overall <- ggplot(municipality_map) +
-    geom_sf(aes(fill = avg_delay)) +
-    scale_fill_viridis_c(option = "plasma", na.value = "grey90") +
-    theme_minimal() +
-    labs(
-      fill = "Avg. Delay (years)",
-      title = "Average Death Registration Delay by Municipality"
-    )
-  ggsave(file.path(fig_dir, "ch3_040_delay_map_overall.pdf"), p_delay_map_overall, width = 8, height = 8)
-} else {
-  message("ch3_040: skipping delay_map_overall — objects 'your_data'/'municipality_shapes' do not exist upstream")
-}
-
-
-delay_map <- left_join(
-  delay_df_GM, 
-  aggregated_muni_50000, 
-  by="group_id")  %>%
-  st_as_sf()
-
-p_delay_map_groups <- ggplot(data = delay_map) +
+# --- Map ------------------------------------------------------------------------------
+delay_map <- left_join(delay_df_GM, aggregated_muni_50000, by = "group_id") |> st_as_sf()
+p_delay_map_groups <- ggplot(delay_map) +
   geom_sf(aes(fill = avg_delay)) +
   scale_fill_viridis_c(option = "viridis", name = "Delay") +
   theme_minimal()
-ggsave(file.path(fig_dir, "ch3_040_delay_map_groups.pdf"), p_delay_map_groups, width = 8, height = 8)
-
-# Interactive tmap "view" maps are not saved as static figures (require a browser/leaflet renderer).
-message("ch3_040: skipping interactive tmap view maps — interactive HTML widgets, not static figures")
-
-
-
+save_fig(p_delay_map_groups, "ch3_040_delay_map_groups.pdf", height = 8)

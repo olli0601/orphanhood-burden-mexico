@@ -1,5 +1,4 @@
 # Mortality preprocessing helpers
-# Helper functions split from the former R/utils.R
 # =============================================================================
 
 preprocess_mortality <- function(file) {

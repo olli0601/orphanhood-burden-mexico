@@ -1,5 +1,4 @@
 # Fertility preprocessing helpers
-# Helper functions split from the former R/utils.R
 # =============================================================================
 
 correct_year <- function(df){
@@ -68,12 +67,10 @@ preprocess_fertility <- function(file) {
   # 3. Process female births (ages 15–50)
   #    INEGI top-codes mother's age at 50 (catalogue edad_mama_nacimiento: 50,
   #    then 99), so no record is older than 50 and the "50-54" band holds age 50
-  #    only, i.e. 50+. The bound was 64, copied from US orphanhood work; that
-  #    implied a 51-64 range the data cannot contain.
+  #    only, i.e. 50+.
   #    Unknown parental age (INEGI code 99) is KEPT as age = NA, as mortality does
-  #    for unknown-age deaths. It used to fall out of the range filter uncounted;
-  #    it is now spread over the age bands by redistribute_unknown_age()
-  #    (R/load_year_panels.R) when the panels are loaded.
+  #    for unknown-age deaths, and spread over the age bands by
+  #    redistribute_unknown_age() (R/load_year_panels.R) at load time.
   band <- function(age) dplyr::if_else(
     age == 99, NA_character_,
     paste0(15 + 5 * floor((age - 15) / 5), "-", 19 + 5 * floor((age - 15) / 5))

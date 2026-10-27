@@ -9,19 +9,10 @@
 # Reads : input-data-raw/{births,deaths}/**/*.tar.zst
 # Writes: the extracted folder tree beside each archive
 #         input-data-raw/.manifest/*.tsv  (what each archive produced)
-# Run    : only if you need the raw files (e.g. to regenerate the per-year
-#          panels from scratch). The default pipeline runs from the already-
-#          processed datasets and does NOT require this step.
+# Run after: ch1_010; before ch1_012.
 #
-# Re-running is cheap. Each archive records the members it produced and their
-# sizes; a later run verifies that payload and skips the archive if it is
-# intact. Before this, the loop below had NO skip condition and used `zstd -f`,
-# so every invocation decompressed ~600 MB of archives and untarred ~12.9 GB
-# over the existing tree - by far the largest avoidable I/O in the project.
-# Set ORPHAN_FORCE_EXTRACT=1 to re-extract regardless.
-#
-# Windows note: the archives are standard .tar.zst, so they also open directly
-# in 7-Zip (>= 21.01) without R. This script just makes it reproducible via pixi.
+# An archive whose manifest verifies is skipped (~13 GB of extraction otherwise);
+# ORPHAN_FORCE_EXTRACT=1 re-extracts. The archives also open in 7-Zip >= 21.01.
 # =============================================================================
 
 source("R/manifest.R")
@@ -43,8 +34,7 @@ if (length(archives) == 0) {
   message(sprintf("ch1_011: %d archive(s)%s", length(archives),
                   if (force) " (ORPHAN_FORCE_EXTRACT set — ignoring manifests)" else ""))
 
-  # Members shipped by more than one archive are last-writer-wins and so cannot
-  # verify any single archive; exclude them from the skip decision.
+  # Members shipped by several archives cannot verify any one of them.
   shared <- manifest_shared_paths(raw_dir)
   if (length(shared)) {
     message(sprintf("ch1_011: %d member path(s) are shipped by more than one archive ",
@@ -79,8 +69,7 @@ if (length(archives) == 0) {
       untar(tarf, exdir = dest)
       file.remove(tarf)                      # drop the intermediate .tar
 
-      # Record what landed on disk, relative to raw_dir, so the next run can
-      # verify it. manifest_write() refuses to certify an empty extraction.
+      # Manifest paths are relative to raw_dir.
       rel <- file.path(sub("^input-data-raw/?", "", dest), members)
       rel <- sub("^/+", "", rel)
       manifest_write(key, rel, raw_dir)
@@ -98,17 +87,9 @@ if (length(archives) == 0) {
   }
 }
 
-# --- INEGI births 2017-2024 (.zip, downloaded by ch1_010) --------------------
-# ch1_010 downloads these and unzips them itself, but its skip condition is the
-# existence of the target DIRECTORY. A partial extraction therefore looks
-# "already done" forever, and re-running ch1_010 reports
-# "[skip] natalidad_2018 already extracted" while the microdata is absent.
-# (Observed: natalidad_2017..2023 held only catalogos/ files.)
-#
-# So repair them here, keyed on the actual MICRODATA FILE rather than the
-# directory. Only conjunto_de_datos/ is extracted — the catalogos/,
-# diccionario_de_datos/ and metadatos/ members are ~180 files the pipeline
-# never reads.
+# --- INEGI births 2017-2024 (.zip left by ch1_010) ---------------------------
+# Ensure the microdata CSV (the only conjunto_de_datos/*.csv member) is
+# extracted, checking the file itself rather than its directory.
 births_zips <- list.files(file.path(raw_dir, "births"), pattern = "^natalidad_[0-9]{4}[.]zip$",
                           full.names = TRUE)
 if (length(births_zips) > 0) {
@@ -119,8 +100,6 @@ if (length(births_zips) > 0) {
     dest <- file.path(raw_dir, "births", paste0("natalidad_", yr))
     ok <- tryCatch({
       entries <- utils::unzip(z, list = TRUE)$Name
-      # The microdata is the sole csv under conjunto_de_datos/; naming drifts
-      # between years (natalidad_<YYYY> up to 2022, enr<YYYY> from 2023).
       want <- grep("conjunto_de_datos/.*[.]csv$", entries, ignore.case = TRUE, value = TRUE)
       if (length(want) == 0) stop("no conjunto_de_datos/*.csv member found")
       have <- file.path(dest, want)
@@ -136,7 +115,6 @@ if (length(births_zips) > 0) {
     }, error = function(e) {
       message("  [FAIL] ", basename(z), " : ", conditionMessage(e)); FALSE
     })
-    # `ok` used to be assigned and discarded, so a failed .zip repair exited 0.
     if (!isTRUE(ok)) n_zip_fail <- n_zip_fail + 1L
   }
   if (n_zip_fail > 0) {

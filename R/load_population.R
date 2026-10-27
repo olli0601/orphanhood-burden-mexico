@@ -1,14 +1,9 @@
-# load_population.R
-# Read + reshape the CONAPO municipal population workbook to long format
-# (mun x sex x 5-year age group x year, 1990-2023). Single source for the block
-# that was previously duplicated across ch1_005 / ch2_040 / ch2_060.
-#   keep_child = FALSE  drop the 0-4 and 5-9 bands (adult panels: fertility/mortality)
-#   keep_child = TRUE   retain them (needed for child survival in Chapter 5)
-#   keep_old   = FALSE  drop the 80-84 and 85+ bands (no parental/child event data there)
-#   keep_old   = TRUE   retain them
-# keep_child = TRUE + keep_old = TRUE reproduces the workbook's POB_TOTAL column, i.e.
-# total population. That is what ch2_010 needs: the municipality-aggregation threshold
-# counts inhabitants, not the age range a particular panel is stratified by.
+# CONAPO municipal population workbook in long format: mun x sex x 5-year age
+# band x year, 1990-2023.
+#   keep_child: keep 00-04 and 05-09 (child survival, Chapter 5)
+#   keep_old  : keep 80-84 and 85-mm
+# Both TRUE gives total population (the workbook's POB_TOTAL), which is what the
+# ch2_010 aggregation threshold counts.
 # =============================================================================
 load_population <- function(keep_child = FALSE, keep_old = FALSE,
                             path = "input-data-raw/population/00_Republica_mexicana/1_Grupo_Quinq_00_RM.xlsx") {

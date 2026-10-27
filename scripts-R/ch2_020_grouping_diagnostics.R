@@ -1,18 +1,10 @@
 # =============================================================================
 # ch2_020_grouping_diagnostics.R  ·  Chapter 2 — Choosing the aggregation threshold
 #
-# Thesis Section 2.4 states that the 50,000-inhabitant threshold was chosen to
-# minimise the coefficient of variation of age-standardised death rates over a
-# 10,000-100,000 sweep. No such sweep existed in this repository, and nothing
-# measured dispersion before vs after aggregation at all — so the stated
-# rationale for aggregating (avoid zero counts, reduce year-on-year standard
-# deviations) was undemonstrated. This script implements it, and widens it,
-# because CV alone cannot arbitrate the trade-off: aggregating always reduces
-# noise, so a criterion that only rewards low noise is minimised by aggregating
-# the whole country into one unit.
-#
-# Three families of metrics are computed for each candidate threshold, plus an
-# ungrouped (municipality-level) baseline:
+# Thesis §2.4 chooses 50,000 by minimising the CV of age-standardised death
+# rates over a 10k-100k sweep. CV alone always favours more aggregation, so this
+# sweep also measures what aggregation costs. For each threshold, plus the
+# ungrouped municipalities (threshold 0):
 #
 #   (a) stability   - what aggregation buys: CV and year-on-year first-difference
 #                     SD of the age-standardised rates.
@@ -22,8 +14,7 @@
 #                     in rates, deprivation and rural/urban composition is
 #                     absorbed into within-unit averaging.
 #
-# THIS SCRIPT DOES NOT PICK A THRESHOLD. Which point on the trade-off to take is
-# a statistical decision for the researchers; the output is the evidence.
+# It does not pick a threshold; that is the researchers' call.
 #
 # Reads : input-data-processed/{mex_muni, deaths, births}.RDS (ch2_010, ch1_015),
 #         input-data-raw/population/.../1_Grupo_Quinq_00_RM.xlsx (via load_population),
@@ -31,10 +22,8 @@
 # Writes: output/ch2/ch2_020_grouping_diagnostics.{RDS,csv},
 #         output/ch2/ch2_020_grouping_diagnostics_wide.csv,
 #         output/ch2/ch2_020_*.pdf
-# Run after: ch2_010. Independent of ch2_040/ch2_050/ch2_060 — it reproduces
-#         ch2_060's group_by(group_id) roll-ups in memory rather than re-running
-#         that script seven times, which would overwrite population.RDS and
-#         geo_info.RDS with a different vintage each time.
+# Run after: ch2_010. Rebuilds ch2_060's group-level roll-ups in memory for
+#         each threshold, so it writes no input-data-processed/ files.
 # =============================================================================
 
 library(sf)
@@ -51,10 +40,12 @@ THRESHOLDS     <- c(10, 20, 30, 40, 50, 75, 100) * 1000
 ANALYSIS_YEARS <- 2010:2020   # IMM 2020 anchors the deprivation covariates.
 POP_YEAR       <- 2020        # vintage the threshold is evaluated against (ch2_010)
 
-# 2020 carries the COVID mortality shock, and occurrence years near the end of
-# the series are still filling in through registration delay (Chapters 3-4). Set
-# SENSITIVITY_YEARS to NULL to skip the second pass.
+# Second pass without 2020 (COVID shock; late years still filling in through
+# registration delay). NULL skips it.
 SENSITIVITY_YEARS <- 2010:2019
+
+window_label <- function(years) sprintf("%d-%d", min(years), max(years))
+MAIN_WINDOW <- window_label(ANALYSIS_YEARS)
 
 fig_dir <- "output/ch2"
 dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
@@ -92,10 +83,8 @@ population <- load_population(keep_child = FALSE, keep_old = TRUE) |>
          sex = as.character(sex), age = as.character(age)) |>
   filter(year %in% ANALYSIS_YEARS)
 
-# The analytical universe is the 2,457 GADM polygons ch2_010 groups. The CONAPO
-# workbook and the event panels carry a handful of codes outside it; left
-# unfiltered they join to group_id = NA and surface as one enormous spurious
-# unit (CLAUDE.md flags this class of bug). Drop them explicitly and say how many.
+# The universe is the 2,457 GADM polygons ch2_010 groups; codes outside it
+# would join to group_id = NA and form one spurious unit.
 universe <- unique(as.character(mex_muni$mun))
 drop_outside <- function(df, what) {
   keep <- df$mun %in% universe
@@ -109,10 +98,8 @@ population <- drop_outside(population, "population")
 deaths     <- drop_outside(deaths, "deaths")
 births     <- drop_outside(births, "births")
 
-# The population grid, not the event tables, defines what cells exist. Absent
-# event rows are structural zeros: computing a zero-share over only the rows
-# that happen to be present would make sparsity *improve* as units merge, which
-# is the exact opposite of the truth.
+# The population grid, not the event tables, defines the cells: absent event
+# rows are structural zeros, and must count in the sparsity shares.
 mort_ages <- sort(unique(as.character(deaths$age)))
 fert_ages <- sort(unique(as.character(births$age)))
 grid_mort <- population |> filter(age %in% mort_ages)
@@ -124,17 +111,14 @@ message(sprintf("ch2_020: %d municipalities, %s-%s, %d mortality age bands, %d f
 
 # Marginalization + rural/urban, municipality level. Weighted exactly as
 # ch2_060 does it (IMM POB_TOT as the weight, small_towns_pct >= 50 => Rural).
-imm <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5)
-imm <- imm[-1, ] |>
+imm <- load_imm("input-data-raw/marginalization/IMM_2020.xls", 2020, skip = 5) |>
   transmute(mun = as.character(mun),
             imm_pop = as.numeric(population),
             IMN = as.numeric(IMN),
             GM  = as.character(GM),
             small_towns_pct = as.numeric(small_towns_pct)) |>
   mutate(area_type = if_else(small_towns_pct >= 50, "Rural", "Urban"))
-# CAUTION (see CLAUDE.md): in CONAPO's workbooks higher IMN means LESS
-# marginalized. GM is correctly oriented. Every IMN-signed quantity below says
-# so at the point of use.
+# Higher IMN = LESS marginalized; GM is correctly oriented.
 GM_ORDER <- c("Muy bajo", "Bajo", "Medio", "Alto", "Muy alto")   # least -> most deprived
 imm$GM <- factor(imm$GM, levels = GM_ORDER)
 stopifnot(sum(!is.na(imm$IMN)) > 2400)
@@ -176,6 +160,20 @@ build_panel <- function(grid, events, lookup, count_col) {
               by = c("group_id", "year", "sex", "age")) |>
     mutate("{count_col}" := tidyr::replace_na(.data[[count_col]], 0))
   pan
+}
+
+# Population-weighted IMN dispersion and composition per unit. The SD is
+# orientation-free, so the IMN sign convention does not affect it.
+unit_imn_summary <- function(ui) {
+  ui |>
+    group_by(group_id) |>
+    # sd_IMN before IMN: summarise() evaluates in order.
+    summarise(sd_IMN = sqrt(sum(imm_pop * (IMN - weighted.mean(IMN, imm_pop))^2) / sum(imm_pop)),
+              IMN = weighted.mean(IMN, imm_pop),
+              n_GM = n_distinct(GM),
+              n_area = n_distinct(area_type),
+              imm_pop = sum(imm_pop),
+              .groups = "drop")
 }
 
 wtd_median <- function(x, w) {
@@ -237,12 +235,9 @@ metrics_sparsity <- function(panel, count_col, family_label) {
 # reader of one year's map actually faces. The two answer different questions
 # and, over an 11-year window, differ by two orders of magnitude — report both.
 #
-# The Poisson variance of a count is its EXPECTED value. Plugging in the observed
-# count (as this function used to) scores every zero cell as zero noise, so the
-# small municipalities where zeros concentrate looked precise — understating what
-# merging buys and biasing the threshold choice downwards. The expected count is
-# population x the national rate for that year, sex and age (`nat_rate`). The
-# observed-count version is kept as var_samp_1y_obs for comparison only.
+# The Poisson variance uses the EXPECTED count, population x the national rate
+# (`nat_rate`): the observed count would score every zero cell as noiseless.
+# The observed-count version is kept as var_samp_1y_obs for comparison only.
 sampling_variance <- function(panel, count_col, std_pop, nat_rate) {
   tot <- sum(std_pop$p_nat)
   n_y <- n_distinct(panel$year)
@@ -282,15 +277,7 @@ metrics_heterogeneity <- function(rate_bar, var_samp, lookup, unit_w, family_lab
   unit_imm <- lookup |>
     left_join(imm, by = "mun") |>
     filter(!is.na(IMN)) |>
-    group_by(group_id) |>
-    # sd_IMN BEFORE IMN: summarise() evaluates in order, so redefining IMN first
-    # would make the dispersion collapse to zero against its own mean.
-    summarise(sd_IMN = sqrt(sum(imm_pop * (IMN - weighted.mean(IMN, imm_pop))^2) / sum(imm_pop)),
-              IMN = weighted.mean(IMN, imm_pop),
-              n_GM = n_distinct(GM),
-              n_area = n_distinct(area_type),
-              imm_pop = sum(imm_pop),
-              .groups = "drop")
+    unit_imn_summary()
   dg <- d |> inner_join(unit_imm, by = "group_id")
   fit <- lm(mean_rate ~ IMN, data = dg, weights = dg$W)
   beta <- unname(coef(fit)[2]); beta_se <- unname(summary(fit)$coefficients[2, 2])
@@ -310,13 +297,7 @@ metrics_heterogeneity <- function(rate_bar, var_samp, lookup, unit_w, family_lab
 metrics_composition <- function(lookup, units, diag) {
   ui <- lookup |> left_join(imm, by = "mun") |> filter(!is.na(IMN))
 
-  # Within-unit deprivation dispersion. A standard deviation is orientation-free,
-  # so the CONAPO IMN sign convention does not affect it — only the gradient
-  # slope in metrics_heterogeneity() is signed.
-  unit_imn <- ui |> group_by(group_id) |>
-    summarise(sd_IMN = sqrt(sum(imm_pop * (IMN - weighted.mean(IMN, imm_pop))^2) / sum(imm_pop)),
-              n_GM = n_distinct(GM), n_area = n_distinct(area_type),
-              imm_pop = sum(imm_pop), .groups = "drop")
+  unit_imn <- unit_imn_summary(ui)
 
   unit_area <- ui |> group_by(group_id) |>
     summarise(area_type = if_else(weighted.mean(small_towns_pct, imm_pop) >= 50, "Rural", "Urban"),
@@ -383,18 +364,18 @@ run_sweep <- function(years, label) {
   dm <- deaths |> filter(year %in% years)
   df <- births |> filter(year %in% years)
 
-  # One standard population, built once at municipality level, shared by every
-  # threshold. Without this each level would standardise to a slightly different
-  # reference (see .drop_unstandardisable) and the columns would not be comparable.
+  # One standard population, built at municipality level and shared by every
+  # threshold, so all levels standardise to the same reference.
+  ref_pop <- function(panel, rate_col) {
+    suppressMessages(.drop_unstandardisable(panel, rate_col, "std_pop")) |>
+      group_by(group_id, sex, age) |> summarise(population = mean(population), .groups = "drop") |>
+      group_by(sex, age) |> summarise(p_nat = sum(population), .groups = "drop")
+  }
   base_lookup <- tibble(mun = as.character(mex_muni$mun), group_id = as.character(mex_muni$mun))
   base_mort <- build_panel(gm, dm, base_lookup, "deaths") |> mutate(mort_rate = deaths / population)
   base_fert <- build_panel(gf, df, base_lookup, "births") |> mutate(fert_rate = births / population)
-  std_mort <- suppressMessages(.drop_unstandardisable(base_mort, "mort_rate", "std_pop")) |>
-    group_by(group_id, sex, age) |> summarise(population = mean(population), .groups = "drop") |>
-    group_by(sex, age) |> summarise(p_nat = sum(population), .groups = "drop")
-  std_fert <- suppressMessages(.drop_unstandardisable(base_fert, "fert_rate", "std_pop")) |>
-    group_by(group_id, sex, age) |> summarise(population = mean(population), .groups = "drop") |>
-    group_by(sex, age) |> summarise(p_nat = sum(population), .groups = "drop")
+  std_mort <- ref_pop(base_mort, "mort_rate")
+  std_fert <- ref_pop(base_fert, "fert_rate")
   nat_mort <- national_rate(base_mort, "deaths")
   nat_fert <- national_rate(base_fert, "births")
 
@@ -403,10 +384,8 @@ run_sweep <- function(years, label) {
     g <- make_grouping(th)
     W <- g$lookup |> left_join(mun_pop, by = "mun") |>
       group_by(group_id) |> summarise(W = sum(total_pop), .groups = "drop")
-    # Second weighting: every MUNICIPALITY counts equally (W = municipalities in
-    # the unit), so small areas — where the zeros are — are not drowned out by
-    # population weights. Still a valid law-of-total-variance decomposition over
-    # municipalities, which the MSE below relies on.
+    # Second weighting: every municipality counts equally (W = municipalities in
+    # the unit), so small areas are not drowned out by population weights.
     W_mun <- g$lookup |> count(group_id, name = "W")
 
     pm <- build_panel(gm, dm, g$lookup, "deaths") |> mutate(mort_rate = deaths / population)
@@ -414,8 +393,7 @@ run_sweep <- function(years, label) {
 
     rm_ <- suppressMessages(compute_std_mort_rate(pm, unit_col = "group_id", std_pop = std_mort))
     rf_ <- suppressMessages(compute_std_fert_rate(pf, unit_col = "group_id", std_pop = std_fert))
-    # Both-sex rate: weights normalised over both sexes (per-sex rows are now
-    # within-sex rates, so they no longer sum to it).
+    # Both-sex rate: weights normalised over both sexes.
     rm_both <- suppressMessages(compute_std_mort_rate(pm, unit_col = "group_id",
                                                       std_pop = std_mort, by_sex = FALSE))
     rm_all <- bind_rows(rm_, rm_both)
@@ -444,27 +422,24 @@ run_sweep <- function(years, label) {
   bind_rows(out)
 }
 
-res <- run_sweep(ANALYSIS_YEARS, sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS)))
+res <- run_sweep(ANALYSIS_YEARS, MAIN_WINDOW)
 if (!is.null(SENSITIVITY_YEARS)) {
-  res <- bind_rows(res, run_sweep(SENSITIVITY_YEARS,
-                                  sprintf("%d-%d", min(SENSITIVITY_YEARS), max(SENSITIVITY_YEARS))))
+  res <- bind_rows(res, run_sweep(SENSITIVITY_YEARS, window_label(SENSITIVITY_YEARS)))
 }
 
 # --- internal consistency checks ---------------------------------------------
-main <- res |> filter(window == sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS)))
+main <- res |> filter(window == MAIN_WINDOW)
 val <- function(fam, met, th) {
   main$value[main$family == fam & main$metric == met & main$threshold == th][1]
 }
 series <- function(fam, met) vapply(c(0, THRESHOLDS), function(t) val(fam, met, t), numeric(1))
 
-# The baseline must be a real, finite, positive between-municipality variance:
-# everything in family (c) is expressed relative to it.
+# Family (c) is relative to the baseline variance, so it must be finite and positive.
 stopifnot(is.finite(val("heterogeneity_mortality", "V_obs", 0)),
           val("heterogeneity_mortality", "V_obs", 0) > 0,
           val("composition", "n_units", 0) == nrow(mex_muni))
 
-# Direction checks. A non-monotone series is either a bug or a genuinely
-# interesting finding — it must be looked at either way, not published blind.
+# A non-monotone series is a bug or a finding; either way it needs a look.
 chk <- function(lbl, x, decreasing = TRUE) {
   bad <- if (decreasing) is.unsorted(rev(x)) else is.unsorted(x)
   if (bad) message(sprintf("ch2_020: WARNING - %s is not monotone in the threshold: %s",
@@ -482,8 +457,7 @@ chk("median unit population", series("composition", "median_unit_pop"), decreasi
 #           (law of total variance: within-unit variance of true municipal rates)
 #   noise = single-year sampling variance of the unit rate = V_samp_1y(t)
 #   MSE   = blur + noise;  MSE_rel = MSE / MSE(0), where MSE(0) = V_samp_1y(0).
-# Lower is better. Computed for both weightings (population; every municipality
-# equal). THIS DOES NOT PICK THE THRESHOLD — it is evidence for the researchers.
+# Lower is better. Computed for both weightings.
 mse <- res |>
   filter(startsWith(family, "heterogeneity_"), metric %in% c("V_sig", "V_samp_1y")) |>
   select(window, family, threshold, metric, value) |>
@@ -620,12 +594,8 @@ p_pop <- main |>
 ggsave(file.path(fig_dir, "ch2_020_unit_population_distribution.pdf"), th_scale(p_pop),
        width = 9, height = 5.5)
 
-# --- The single summary panel: all three thesis criteria on one axis ----------
-# Section 2.4 names three requirements but only quantifies none of them. This is
-# the figure that puts them side by side: the two benefits and the one cost,
-# each indexed to its own ungrouped (threshold = 0) value so they share a scale.
-# One y-axis - the three series are deliberately made commensurate rather than
-# given separate scales, which would make the crossings meaningless.
+# --- Summary panel: the two benefits and the cost on one axis -----------------
+# Each series is indexed to its ungrouped (threshold = 0) value so they share a scale.
 tradeoff_series <- bind_rows(
   pick("stability_mortality", "cv_median", sexes = "both") |>
     mutate(series = "Year-on-year instability (CV)", role = "Benefit"),
@@ -634,16 +604,13 @@ tradeoff_series <- bind_rows(
   pick("heterogeneity_mortality", "V_sig") |>
     mutate(series = "Real variation between places", role = "Cost")) |>
   group_by(series) |>
-  # Index to the ungrouped baseline. Asserted rather than assumed: if the 0 row
-  # is ever dropped from THRESHOLDS this silently becomes a different figure.
   mutate(base = value[threshold == 0]) |>
   ungroup()
 stopifnot(nrow(tradeoff_series) > 0, !anyNA(tradeoff_series$base),
           all(tradeoff_series$base > 0))
 tradeoff_series <- tradeoff_series |> mutate(rel = value / base)
 
-# Validated with the dataviz palette checker (light surface): all six checks pass,
-# worst adjacent CVD dE 14.7. Do not substitute hues without re-running it.
+# Colour-blind-safe on a light surface (worst adjacent CVD dE 14.7).
 tradeoff_cols <- c("Year-on-year instability (CV)" = "#3d7fb5",
                    "Cells with zero deaths"        = "#d4785f",
                    "Real variation between places"  = "#8a6bb0")
@@ -656,10 +623,12 @@ p_combined <- ggplot(tradeoff_series, aes(threshold, rel, colour = series)) +
   geom_point(size = 2) +
   scale_colour_manual(values = tradeoff_cols, name = NULL) +
   scale_linetype_manual(values = c(Benefit = "solid", Cost = "22"), name = NULL) +
+  # Pin legend order: ggplot otherwise orders unnamed legends differently between runs.
+  guides(linetype = guide_legend(order = 1), colour = guide_legend(order = 2)) +
   scale_y_continuous(labels = scales::percent) +
   labs(y = "Relative to ungrouped municipalities",
        title = "What the population threshold buys, and what it costs",
-       subtitle = paste("Mortality,", sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS)),
+       subtitle = paste("Mortality,", MAIN_WINDOW,
                         "- the two benefits fall steeply then flatten;",
                         "the cost falls roughly in a straight line")) +
   theme(legend.position = "bottom", legend.box = "vertical",
@@ -681,8 +650,7 @@ summ <- main |>
   pivot_wider(names_from = key, values_from = value)
 
 cat("\n============ ch2_020 grouping diagnostics ============\n")
-cat(sprintf("window %s | %d municipalities | %d thresholds\n\n",
-            sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS)),
+cat(sprintf("window %s | %d municipalities | %d thresholds\n\n", MAIN_WINDOW,
             nrow(mex_muni), length(THRESHOLDS)))
 print(as.data.frame(summ), digits = 4, row.names = FALSE)
 cat("\nFull tables: ", file.path(fig_dir, "ch2_020_grouping_diagnostics.csv"), "\n")
@@ -697,7 +665,7 @@ mse_tab <- res |>
   mutate(outcome   = if_else(grepl("mortality", family), "Mortality", "Fertility (mothers)"),
          weighting = if_else(grepl("munweighted", family), "every municipality equal", "population-weighted"))
 
-p_mse <- ggplot(mse_tab |> filter(window == sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS))),
+p_mse <- ggplot(mse_tab |> filter(window == MAIN_WINDOW),
                 aes(threshold, value, colour = weighting)) +
   geom_hline(yintercept = 1, colour = "grey60", linetype = "dashed") +
   geom_line() + geom_point() +
@@ -717,7 +685,7 @@ print(as.data.frame(
 noise_cmp <- res |>
   filter(family %in% c("heterogeneity_mortality", "heterogeneity_mortality_munweighted"),
          metric %in% c("V_samp_1y", "V_samp_1y_obs"),
-         window == sprintf("%d-%d", min(ANALYSIS_YEARS), max(ANALYSIS_YEARS))) |>
+         window == MAIN_WINDOW) |>
   select(family, metric, threshold, value) |>
   pivot_wider(names_from = metric, values_from = value) |>
   mutate(expected_over_observed = round(V_samp_1y / V_samp_1y_obs, 3))

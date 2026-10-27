@@ -1,5 +1,4 @@
 # Orphans preprocessing helper
-# Helper functions split from the former R/utils.R
 # =============================================================================
 
 preprocess_orphans <- function(file) {

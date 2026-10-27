@@ -1,22 +1,12 @@
-# manifest.R
 # Payload manifests for the Chapter 1 acquisition steps.
 #
-# The problem this exists to solve: ch1_010 and ch1_012 decided "already done"
-# from the existence of a directory or a file. That has already produced a false
-# "done" in this project - natalidad_2017..2023 reported "[skip] already
-# extracted" while holding only catalogos/ files - and it is exactly the failure
-# mode CLAUDE.md warns about ("be suspicious of checks that don't inspect what
-# they claim to verify"). ch1_011's .tar.zst loop had the opposite problem: no
-# check at all, so it re-extracted ~13 GB on every run.
+# A manifest records what a step produced - every member path and its byte
+# size, or for a panel its row count and event total - so a later run can
+# verify the payload rather than infer success from a path existing (a
+# directory left by a half-finished unzip passes file.exists()).
 #
-# A manifest records what a step actually produced - every member path and its
-# byte size - so a later run can verify the payload instead of guessing from a
-# directory listing. Manifests are cheap to write, cheap to check, and make a
-# truncated or partially-deleted extraction detectable.
-#
-# Manifests live in <root>/.manifest/ and are plain TSV so they can be read with
-# any tool. They are derived data: deleting one forces the work to be redone,
-# which is the safe direction to fail.
+# Manifests live in <root>/.manifest/ as plain TSV/CSV. They are derived data:
+# deleting one forces the work to be redone.
 # =============================================================================
 
 # Sanitise an arbitrary key (usually a path) into a single filename.
@@ -48,13 +38,9 @@ manifest_write <- function(key, files, root) {
 }
 
 # Paths claimed by more than one manifest. Several INEGI deaths archives ship
-# the same catalogue and dictionary files (catalogos/*.csv, ENTMUN.dbf,
-# Thumbs.db), so whichever archive extracts last wins and the others' recorded
-# sizes no longer match. Those members cannot certify anything about a given
-# archive and must be excluded from its check. 91 of 455 member paths collide
-# here, 60 of them with differing sizes - but no microdata file is among them,
-# which is why the pipeline is unaffected (ch1_012 resolves microdata by
-# explicit path precisely to avoid these catalogue decoys).
+# the same catalogue files (catalogos/*.csv, ENTMUN.dbf, Thumbs.db); whichever
+# extracts last wins, so these members cannot verify any single archive and are
+# excluded from its check. No microdata file is among them.
 manifest_shared_paths <- function(root) {
   mans <- list.files(file.path(root, ".manifest"), pattern = "[.]tsv$", full.names = TRUE)
   if (!length(mans)) return(character())
@@ -79,8 +65,7 @@ manifest_check <- function(key, root, ignore = character()) {
                          colClasses = c("character", "numeric"))
   if (length(ignore)) m <- m[!m$path %in% ignore, , drop = FALSE]
   if (!nrow(m)) {
-    # Everything this archive provides is shared with another archive, so there
-    # is no exclusive payload to verify. Report rather than silently pass.
+    # Everything here is shared with another archive: nothing exclusive to verify.
     return(list(ok = FALSE, reason = "no exclusive members to verify",
                 n = 0L, n_missing = 0L, n_resized = 0L))
   }
@@ -101,9 +86,8 @@ manifest_check <- function(key, root, ignore = character()) {
        n_missing = n_missing, n_resized = n_resized)
 }
 
-# Tabular manifest (one row per built artefact), used by ch1_012 for the per-year
-# panels where the meaningful payload is a row count and an event total, not a
-# file size. Keyed on the `id` column.
+# Tabular manifest (one row per built artefact: id, rows, total), used for the
+# per-year panels, keyed on `id`.
 table_manifest_read <- function(path) {
   if (!file.exists(path)) {
     return(data.frame(id = character(), rows = numeric(), total = numeric(),
@@ -128,13 +112,30 @@ table_manifest_get <- function(path, id) {
   if (!nrow(r)) NULL else as.list(r[1, ])
 }
 
-# Env-var flag, so a forced rebuild does not require editing a script.
+# Verify a saved per-year panel against its tabular-manifest entry.
+# Returns list(ok, reason, rows, total).
+panel_manifest_check <- function(path, id, value_col, manifest) {
+  fail <- function(reason) list(ok = FALSE, reason = reason, rows = NA_real_, total = NA_real_)
+  if (!file.exists(path)) return(fail("missing"))
+  rec <- table_manifest_get(manifest, id)
+  if (is.null(rec)) return(fail("no manifest entry"))
+  d <- tryCatch(readRDS(path), error = function(e) e)
+  if (inherits(d, "error")) return(fail(paste("unreadable:", conditionMessage(d))))
+  n <- sum(d[[value_col]], na.rm = TRUE)
+  if (nrow(d) != rec$rows || !isTRUE(all.equal(n, rec$total)))
+    return(fail(sprintf("expected %s rows / %s %s, found %s / %s",
+                        format(rec$rows, big.mark = ","), format(rec$total, big.mark = ","), value_col,
+                        format(nrow(d), big.mark = ","), format(n, big.mark = ","))))
+  list(ok = TRUE, reason = "verified", rows = rec$rows, total = n)
+}
+
+# Env-var flag (ORPHAN_FORCE_*), so a forced rebuild needs no script edit.
 env_flag <- function(name) {
   v <- tolower(Sys.getenv(name, ""))
   nzchar(v) && !v %in% c("0", "false", "no")
 }
 
-# Human-readable byte size for the "avoided N GB" reporting.
+# Human-readable byte size.
 fmt_bytes <- function(b) {
   if (is.na(b) || b <= 0) return("0 B")
   u <- c("B", "KB", "MB", "GB", "TB")

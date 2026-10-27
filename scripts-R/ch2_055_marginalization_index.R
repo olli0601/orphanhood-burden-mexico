@@ -6,9 +6,9 @@
 # Herreros (2023, EconoQuantum 20(1), 59-82; "IMAC"), who publishes it for the
 # 32 states only; here it is re-estimated at municipal level.
 #
-# Indicators: CONAPO's nine, MINUS income (PO2SM, "<= 2 minimum wages") —
-# dropped by decision with Oliver (benchmarked to a policy variable that Mexico
-# raised steeply from 2019). Eight remain, all % of population / dwellings:
+# Indicators: CONAPO's nine minus income (PO2SM, "<= 2 minimum wages", tied to
+# a minimum wage Mexico raised steeply from 2019). Eight, all % of population /
+# dwellings:
 #   illiterate, no complete primary (15+), no drainage, no electricity,
 #   no piped water, overcrowding, dirt floors, localities < 5,000.
 #
@@ -33,8 +33,7 @@
 # HIGHER = MORE MARGINALIZED (the opposite of CONAPO's IMN; see CLAUDE.md).
 # Unweighted across municipalities, as CONAPO does.
 #
-# Standalone for now: nothing downstream reads its output yet (ch2_060 still
-# interpolates CONAPO's IMN 2010/2015/2020).
+# ch2_061 turns the output into the group-level ORPHAN_MARG=fw variant.
 #
 # Reads : input-data-raw/marginalization/{Base_Indice_de_marginacion_municipal_90-15.csv,
 #         IMM_2020.xls, IMM_DP2_2010.xlsx, IMM_DP2_2015.xlsx},
@@ -107,8 +106,7 @@ message(sprintf(paste0("== education rebuild, 2010 check (%d municipalities) ==\
                 mean(val_edu$d), max(abs(val_edu$d)), 100 * mean(abs(val_edu$d) < 0.1)))
 
 # --- 3. 2020: CONAPO IMM_2020 + rebuilt education ---------------------------
-imm_2020 <- load_imm(file.path(raw, "marginalization", "IMM_2020.xls"), 2020, skip = 5) |>
-  filter(!is.na(mun))  # drops the "Nacional" row
+imm_2020 <- load_imm(file.path(raw, "marginalization", "IMM_2020.xls"), 2020, skip = 5)
 mun_2020 <- imm_2020 |>
   transmute(mun, year = 2020, population,
             illiterate_pct, no_drainage_pct, no_electricity_pct, no_piped_water_pct,

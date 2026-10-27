@@ -1,340 +1,165 @@
 # =============================================================================
 # ch3_030_eda_mexico.R  ·  Chapter 3 — Exploratory data analysis
-# National/subnational EDA of fertility, mortality and marginalization on the
-# harmonised panels (trends, rates, distributions).
+# Standardised fertility and mortality on the grouped panels: sampled unit
+# trends, national age profiles, urban/rural and marginalization contrasts.
 #
 # Reads : input-data-processed/{births_grouped_mun, deaths_grouped_mun, population_grouped_mun,
-#         marg_index, rural_urban_area}.parquet
-# Writes: output/ch3/ (EDA figures)
-# Run after: ch2_060
+#         index_grouped_mun[_fw], rural_urban_area}.RDS
+# Writes: output/ch3[_fw]/ch3_030_*.pdf
+# Run after: ch3_010 (deaths_grouped_mun), ch2_060
 # =============================================================================
 
-# Exploratory Data Analysis (EDA) on Fertility and Mortality in Mexico
-# Author: [Your Name]
-# Date: 2025-08-10
+source("R/setup.R")
+library(forcats)
+fig_dir <- marg_fig_dir("output/ch3")
 
-## --- 1. Load required libraries ---
-library(dplyr)      # For data manipulation
-library(ggplot2)    # For visualization
-library(tidyr)      # For data tidying
-library(stringr)    # For string operations
-library(forcats)    # For factor manipulation
-library(purrr)
-
-# --- 1b. Load custom functions for standardised rates ---
-source("R/rates.R")  # Adjust path if needed
-
-# --- 1c. Output directory for figures ---
-source("R/marginalization.R")
-fig_dir <- marg_fig_dir("output/ch3")  # output/ch3_fw when ORPHAN_MARG=fw
-
-# --- 2. Load datasets ---
-# Adjust file paths if needed
 births <- readRDS("input-data-processed/births_grouped_mun.RDS")
-deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS") |>
-  filter(!age %in% 1:15)
-population <- readRDS("input-data-processed/population_grouped_mun.RDS")|>
+deaths <- readRDS("input-data-processed/deaths_grouped_mun.RDS")
+population <- readRDS("input-data-processed/population_grouped_mun.RDS") |>
   filter(!age %in% c("00-04", "05-09", "10-14"))
 marg_index <- readRDS(marg_file("index_grouped_mun"))
-# Reference population for the by-age standardised rates: 2020, from the
-# population table (not the events frames, which repeat it per year_reg).
 std_ref <- std_ref_population(population)
-# Urban/rural per grouped municipality (built in ch2_060 from IMM small_towns_pct).
 rural_urban <- readRDS("input-data-processed/rural_urban_area.RDS") |>
-  dplyr::select(group_id, area_type)
+  select(group_id, area_type)
 
-#-------------------------------------------------------------------------------
-#------------------------------------FERTILITY----------------------------------
-#-------------------------------------------------------------------------------
-
-
-# --- 4. Data preparation & indicator calculation ---
-# 4a. Fertility: merge births and population only where needed
-fertility <- births %>%
-  left_join(population, by = c("group_id", "year", "sex", "age")) %>%
-  mutate(fert_rate = births / population) %>%
+# --- Fertility ------------------------------------------------------------------
+fertility <- births |>
+  left_join(population, by = c("group_id", "year", "sex", "age")) |>
+  mutate(fert_rate = births / population) |>
   drop_na()
 
 std_fert <- compute_std_fert_rate(fertility)
 std_fert_age <- compute_std_rate_age_gender(fertility, std_ref)
 
-set.seed(123) # For reproducibility
+set.seed(123)
 sampled_ids <- sample(unique(std_fert$group_id), 9)
-std_fert_sample <- std_fert %>% filter(group_id %in% sampled_ids)
 
-# 1) Prep: make types explicit, de-duplicate, and fill any missing years per group/sex
-fert_prep <- std_fert_sample |>
-  mutate(
-    year = as.integer(year),
-    sex  = as_factor(sex)        # keeps original order if already ordered
-  ) |>
-  summarise(                      # guard against duplicate rows for a year/sex
-    std_fert_rate = mean(std_fert_rate, na.rm = TRUE),
-    .by = c(group_id, sex, year)
-  ) |>
+# Trend per sampled unit, on a complete yearly grid
+fert_prep <- std_fert |>
+  filter(group_id %in% sampled_ids) |>
+  mutate(year = as.integer(year), sex = as_factor(sex)) |>
+  summarise(std_fert_rate = mean(std_fert_rate, na.rm = TRUE), .by = c(group_id, sex, year)) |>
   group_by(group_id, sex) |>
-  complete(year = tidyr::full_seq(year, 1)) |>   # ensures continuous yearly timeline
+  complete(year = full_seq(year, 1)) |>
   arrange(group_id, sex, year) |>
   ungroup()
 
-# 2) Faceted overview: all groups at once, lines colored by sex
-p_facets <- fert_prep |>
-  ggplot(aes(x = year, y = std_fert_rate, color = sex)) +
+p_facets <- ggplot(fert_prep, aes(x = year, y = std_fert_rate, color = sex)) +
   geom_line(linewidth = 0.8, na.rm = TRUE) +
   geom_point(size = 1.6, na.rm = TRUE) +
   facet_wrap(~ group_id, scales = "free_y") +
-  labs(
-    title = "Trend of standardized fertility rate by sex",
-    subtitle = "One panel per group_id",
-    x = "Year", y = "Standardized fertility rate", color = "Sex"
-  ) +
+  labs(title = "Trend of standardized fertility rate by sex", subtitle = "One panel per group_id",
+       x = "Year", y = "Standardized fertility rate", color = "Sex") +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
+save_fig(p_facets, "ch3_030_std_fert_trend_by_sex_facets.pdf", 12, 8)
 
-p_facets
-ggsave(file.path(fig_dir, "ch3_030_std_fert_trend_by_sex_facets.pdf"), p_facets, width = 12, height = 8)
-#-------------------------------------------------------------------------------
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(forcats)
-
-# ---- Prep (dedupe, types, complete grid) ----
-std_fert_age_sample <- std_fert_age %>% filter(group_id %in% sampled_ids)
-fert_age <- std_fert_age_sample |>
-  mutate(
-    year      = as.integer(year),
-    age = as_factor(age),
-    sex       = as_factor(sex)
-  ) |>
-  summarise(                                  # collapse duplicates if present
-    std_fert_rate = mean(std_rate, na.rm = TRUE),
-    .by = c(group_id, sex, age, year)
-  ) |>
+# Age composition per sampled unit, stacked to 100% within unit x sex x year
+fert_share <- std_fert_age |>
+  filter(group_id %in% sampled_ids) |>
+  mutate(year = as.integer(year), age = as_factor(age), sex = as_factor(sex)) |>
+  summarise(std_fert_rate = mean(std_rate, na.rm = TRUE), .by = c(group_id, sex, age, year)) |>
   group_by(group_id, sex) |>
-  complete(
-    year = tidyr::full_seq(year, 1),
-    age
-  ) |>
+  complete(year = full_seq(year, 1), age) |>
   arrange(group_id, sex, age, year) |>
-  ungroup()
+  ungroup() |>
+  mutate(share = std_fert_rate / sum(std_fert_rate, na.rm = TRUE), .by = c(group_id, sex, year))
 
-# Optional: normalize to shares within each group_id/sex/year
-fert_share <- fert_age |>
-  group_by(group_id, sex, year) |>
-  mutate(share = std_fert_rate / sum(std_fert_rate, na.rm = TRUE)) |>
-  ungroup()
-
-p_area <- fert_share |>
-  ggplot(aes(year, share, fill = age)) +
+p_area <- ggplot(fert_share, aes(year, share, fill = age)) +
   geom_area(color = "white", size = 0.15, na.rm = TRUE) +
   facet_grid(sex ~ group_id) +
   scale_y_continuous(labels = scales::percent_format()) +
-  labs(
-    title = "Composition across age groups",
-    subtitle = "Within each group_id × sex, stacked to 100%",
-    x = "Year", y = "Share of total", fill = "Age group"
-  ) +
+  labs(title = "Composition across age groups", subtitle = "Within each group_id × sex, stacked to 100%",
+       x = "Year", y = "Share of total", fill = "Age group") +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom")
-p_area
-ggsave(file.path(fig_dir, "ch3_030_fert_age_composition_area.pdf"), p_area, width = 12, height = 8)
+save_fig(p_area, "ch3_030_fert_age_composition_area.pdf", 12, 8)
 
-#------------------------------------
-std_nat <- compute_national_std_rate_age_gender(fertility, std_ref)
+std_nat <- compute_national_std_rate_age_gender(fertility, std_ref) |>
+  arrange(year, sex, age) |>
+  filter(year >= 1990)
+save_fig(plot_age_profile(std_nat, "Fertility"), "ch3_030_std_fert_by_age_year_facets.pdf", 12, 8)
 
-std_nat <- std_nat %>% arrange(year, sex, age) %>% filter(year>=1990)
-
-# 2. Plot with ggplot
-p_std_fert_age_year <- ggplot(std_nat, aes(x = age, y = std_rate, color = sex, group = sex)) +
-  geom_line() +
-  geom_point() +
-  facet_wrap(~ year) +
-  labs(
-    title = "Standardized Fertility Rate by Age and Sex",
-    x = "Age Group",
-    y = "Standardized Fertility Rate"
-  ) +
-  theme_minimal() +
-  theme(
-    strip.text = element_text(face = "bold"),
-    legend.title = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(size = 8)
-  )
-
-
-print(p_std_fert_age_year)
-ggsave(file.path(fig_dir, "ch3_030_std_fert_by_age_year_facets.pdf"), p_std_fert_age_year, width = 12, height = 8)
-
-
-
-# 4b. Mortality: merge deaths and population only where needed
-mortality <- deaths %>%
-  filter(!age %in% c("80-84")) %>%
-  left_join(population, by = c("group_id", "year", "sex", "age")) %>%
-  mutate(
-    mort_rate = tot_deaths / population, 
-    deaths = tot_deaths
-  ) %>%
+# --- Mortality ------------------------------------------------------------------
+mortality <- deaths |>
+  filter(!age %in% c("80-84")) |>
+  left_join(population, by = c("group_id", "year", "sex", "age")) |>
+  mutate(mort_rate = tot_deaths / population, deaths = tot_deaths) |>
   select(-tot_deaths)
 
-# Thesis Fig 3 (national by-age mortality, captioned 1990-2023) is computed
-# HERE, before the 2010-2020 filter below. It used to be computed after it, so
-# the figure only covered 2010-2020, unlike its companion Fig 2 (fertility).
-std_mort_nat <- compute_national_std_rate_age_gender(mortality, std_ref)
-std_mort_nat <- std_mort_nat %>% arrange(year, sex, age) %>% filter(year>=1990)
+# National age profile over all years, before the 2010-2020 restriction below.
+std_mort_nat <- compute_national_std_rate_age_gender(mortality, std_ref) |>
+  arrange(year, sex, age) |>
+  filter(year >= 1990)
+save_fig(plot_age_profile(std_mort_nat, "Mortality"), "ch3_030_std_mort_by_age_year_facets.pdf", 12, 8)
 
-# 4c. Add marginalization and urban/rural info for summary/plots if needed
-fertility <- fertility %>%
-  filter(year >=2010 & year <=2020) %>%
-  left_join(marg_index, by = c("group_id", "year")) %>%
-  left_join(rural_urban, by = "group_id")
+# Marginalization and urban/rural, 2010-2020
+add_context <- function(d) {
+  d |>
+    filter(year >= 2010 & year <= 2020) |>
+    left_join(marg_index, by = c("group_id", "year")) |>
+    left_join(rural_urban, by = "group_id")
+}
+fertility <- add_context(fertility)
+mortality <- add_context(mortality)
 
-mortality <- mortality %>%
-  filter(year >=2010 & year <=2020) %>%
-  left_join(marg_index, by = c("group_id", "year")) %>%
-  left_join(rural_urban, by = "group_id")
-
-# --- 5. Calculate standardised rates ---
-# Mortality (municipal)
 std_mort_mun <- compute_std_rate_age_gender(mortality, std_ref)
-# Mortality (national): computed above, before the 2010-2020 filter.
 
-# 2. Plot with ggplot
-p_std_mort_age_year <- ggplot(std_mort_nat, aes(x = age, y = std_rate, color = sex, group = sex)) +
-  geom_line() +
-  geom_point() +
-  facet_wrap(~ year) +
-  labs(
-    title = "Standardized Mortality Rate by Age and Sex",
-    x = "Age Group",
-    y = "Standardized Mortality Rate"
-  ) +
-  theme_minimal() +
-  theme(
-    strip.text = element_text(face = "bold"),
-    legend.title = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(size = 8)
-  )
+# --- Distributions and trends ---------------------------------------------------
+rate_hist <- function(d, rate, bins, fill, title, xlab) {
+  ggplot(filter(d, !is.na(.data[[rate]]) & !is.na(area_type)), aes(x = .data[[rate]])) +
+    geom_histogram(bins = bins, fill = fill, color = "black") +
+    facet_wrap(~ area_type) +
+    labs(title = title, x = xlab, y = "Count")
+}
+national_trend <- function(d, what) {
+  ggplot(d, aes(x = year, y = std_rate, color = sex)) +
+    geom_line(aes(group = interaction(sex, age))) +
+    labs(title = sprintf("National Standardised %s Rate", what),
+         x = "Year", y = sprintf("Standardised %s Rate", what))
+}
 
+save_fig(rate_hist(fertility, "fert_rate", 30, "skyblue", "Fertility Rate Distribution by Urban/Rural Area",
+                   "Fertility Rate"), "ch3_030_fert_rate_hist_by_area.pdf")
+save_fig(national_trend(std_nat, "Fertility"), "ch3_030_std_fert_national.pdf")
 
-print(p_std_mort_age_year)
-ggsave(file.path(fig_dir, "ch3_030_std_mort_by_age_year_facets.pdf"), p_std_mort_age_year, width = 12, height = 8)
-
-
-# --- 6. Fertility analysis ---
-p_fert_hist_by_area <- ggplot(filter(fertility, !is.na(fert_rate) & !is.na(area_type)), aes(x = fert_rate)) +
-  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
-  facet_wrap(~ area_type) +
-  labs(title = "Fertility Rate Distribution by Urban/Rural Area",
-       x = "Fertility Rate", y = "Count")
-p_fert_hist_by_area
-ggsave(file.path(fig_dir, "ch3_030_fert_rate_hist_by_area.pdf"), p_fert_hist_by_area, width = 8, height = 6)
-
-# --- 6b. Plot standardised fertility rates (municipal and national) ---
-
-if (exists("std_fert_mun")) {
-  # Sample 12 random group_id for visualization
-  set.seed(123) # For reproducibility
-  sampled_ids <- sample(unique(std_fert_mun$group_id), 12)
-  std_fert_mun_sample <- std_fert_mun %>% filter(group_id %in% sampled_ids)
-  
-  p_std_fert_mun_sample <- ggplot(std_fert_mun_sample, aes(x = year, y = std_rate, color = sex)) +
-    geom_line() +
-    facet_wrap(~ group_id) +
-    labs(title = "Standardised Fertility Rate by Municipality (sampled)",
-         x = "Year", y = "Standardised Fertility Rate")
-  ggsave(file.path(fig_dir, "ch3_030_std_fert_mun_sample.pdf"), p_std_fert_mun_sample, width = 12, height = 8)
-} else message("ch3_030: skipping per-municipality std-fertility plot (std_fert_mun not built).")
-
-std_fert_nat <- std_nat  # national fertility std (alias)
-p_std_fert_nat <- ggplot(std_fert_nat, aes(x = year, y = std_rate, color = sex)) +
-  geom_line(aes(group = interaction(sex, age))) +
-  labs(title = "National Standardised Fertility Rate",
-       x = "Year", y = "Standardised Fertility Rate")
-p_std_fert_nat
-ggsave(file.path(fig_dir, "ch3_030_std_fert_national.pdf"), p_std_fert_nat, width = 8, height = 6)
-
-
-
-# --- 7. Mortality analysis ---
-p_mort_hist_by_area <- ggplot(filter(mortality, !is.na(mort_rate) & !is.na(area_type)), aes(x = mort_rate)) +
-  geom_histogram(bins = 100, fill = "salmon", color = "black") +
-  facet_wrap(~ area_type) +
-  labs(title = "Mortality Rate Distribution by Urban/Rural Area",
-       x = "Mortality Rate", y = "Count")
-p_mort_hist_by_area
-ggsave(file.path(fig_dir, "ch3_030_mort_rate_hist_by_area.pdf"), p_mort_hist_by_area, width = 8, height = 6)
+save_fig(rate_hist(mortality, "mort_rate", 100, "salmon", "Mortality Rate Distribution by Urban/Rural Area",
+                   "Mortality Rate"), "ch3_030_mort_rate_hist_by_area.pdf")
 
 p_mort_vs_marg <- ggplot(filter(mortality, !is.na(IMN) & !is.na(mort_rate)),
                          aes(x = IMN, y = mort_rate, color = area_type)) +
   geom_point(alpha = 0.5) +
   geom_smooth(method = "lm") +
-  labs(title = "Mortality Rate vs. Marginalization Index",
-       x = "Marginalization Index", y = "Mortality Rate")
-p_mort_vs_marg
-ggsave(file.path(fig_dir, "ch3_030_mort_vs_marginalization.pdf"), p_mort_vs_marg, width = 8, height = 6)
+  labs(title = "Mortality Rate vs. Marginalization Index", x = "Marginalization Index", y = "Mortality Rate")
+save_fig(p_mort_vs_marg, "ch3_030_mort_vs_marginalization.pdf")
 
-# --- 7b. Plot standardised mortality rates (municipal and national) ---
 set.seed(123)
 mort_sampled_ids <- sample(unique(std_mort_mun$group_id), 12)
-std_mort_mun_sample <- std_mort_mun %>% filter(group_id %in% mort_sampled_ids)
-p_std_mort_mun_sample <- ggplot(std_mort_mun_sample, aes(x = year, y = std_rate, color = sex)) +
+p_std_mort_mun_sample <- ggplot(filter(std_mort_mun, group_id %in% mort_sampled_ids),
+                                aes(x = year, y = std_rate, color = sex)) +
   geom_line(aes(group = interaction(sex, age))) +
   facet_wrap(~ group_id, scales = "free_y") +
   labs(title = "Standardised Mortality Rate by Municipality (sampled)",
        x = "Year", y = "Standardised Mortality Rate")
-p_std_mort_mun_sample
-ggsave(file.path(fig_dir, "ch3_030_std_mort_mun_sample.pdf"), p_std_mort_mun_sample, width = 12, height = 8)
+save_fig(p_std_mort_mun_sample, "ch3_030_std_mort_mun_sample.pdf", 12, 8)
+save_fig(national_trend(std_mort_nat, "Mortality"), "ch3_030_std_mort_national.pdf")
 
-p_std_mort_nat <- ggplot(std_mort_nat, aes(x = year, y = std_rate, color = sex)) +
-  geom_line(aes(group = interaction(sex, age))) +
-  labs(title = "National Standardised Mortality Rate",
-       x = "Year", y = "Standardised Mortality Rate")
-p_std_mort_nat
-ggsave(file.path(fig_dir, "ch3_030_std_mort_national.pdf"), p_std_mort_nat, width = 8, height = 6)
+# --- Rates vs marginalization and area type --------------------------------------
+# Correlation across units within each year of the age-standardised rate (per
+# woman for fertility, both sexes for mortality) with IMN. IMN runs backwards:
+# a NEGATIVE correlation means more marginalized, higher rate.
+imn_unit <- distinct(fertility, group_id, year, IMN) |> mutate(year = as.integer(as.character(year)))
+cor_by_year <- function(std, col) {
+  std |>
+    mutate(year = as.integer(as.character(year))) |>
+    inner_join(imn_unit, by = c("group_id", "year")) |>
+    group_by(year) |>
+    summarise(r = cor(.data[[col]], IMN, use = "complete.obs"), units = n(), .groups = "drop")
+}
+cat("Correlation across units, age-standardised fertility (per woman) vs IMN, by year:\n")
+print(as.data.frame(cor_by_year(compute_std_fert_rate(filter(fertility, sex == "female")), "std_fert_rate")))
+cat("Correlation across units, age-standardised mortality (both sexes) vs IMN, by year:\n")
+print(as.data.frame(cor_by_year(compute_std_mort_rate(mortality, by_sex = FALSE), "std_mort_rate")))
 
-
-# --- 8. Socioeconomic and demographic relationships ---
-# Correlation between fertility/mortality rates and marginalization, urban/rural
-# Was cor(fert_rate, IMN) over all rows, pooling age bands, sexes and
-# registration-year slices: age dominates the rates, so that number mostly
-# measured age composition. Now: age-standardised rates (per woman for
-# fertility, mother rows; both sexes for mortality), one value per unit, and
-# the correlation with IMN taken across units within each year.
-# IMN runs backwards: NEGATIVE correlation = more marginalized, higher rate.
-std_f_unit <- compute_std_fert_rate(filter(fertility, sex == "female"))
-std_m_unit <- compute_std_mort_rate(mortality, by_sex = FALSE)
-imn_unit <- distinct(fertility, group_id, year, IMN)
-cor_by_year <- function(std, col) std |>
-  mutate(year = as.integer(as.character(year))) |>
-  inner_join(mutate(imn_unit, year = as.integer(as.character(year))), by = c("group_id", "year")) |>
-  group_by(year) |>
-  summarise(r = cor(.data[[col]], IMN, use = "complete.obs"), units = n(), .groups = "drop")
-cor_fert_marg <- cor_by_year(std_f_unit, "std_fert_rate")
-cor_mort_marg <- cor_by_year(std_m_unit, "std_mort_rate")
-
-cat("Correlation across units, age-standardised fertility (per woman) vs IMN, by year:\n"); print(as.data.frame(cor_fert_marg))
-cat("Correlation across units, age-standardised mortality (both sexes) vs IMN, by year:\n"); print(as.data.frame(cor_mort_marg))
-
-# Compare rates by urban/rural
-fertility %>%
-  group_by(area_type) %>%
-  summarise(mean_fert_rate = mean(fert_rate, na.rm = TRUE))
-mortality %>%
-  group_by(area_type) %>%
-  summarise(mean_mort_rate = mean(mort_rate, na.rm = TRUE))
-
-# --- 9. Key messages and summary ---
-# (To be completed after reviewing results)
-cat("\nKey messages:\n")
-cat("- Birth and death rates vary significantly by marginalization and urban/rural status.\n")
-cat("- Higher marginalization is associated with [describe direction] birth and death rates.\n")
-cat("- Urban/rural differences are evident in both fertility and mortality.\n")
-cat("- Further analysis by age, cause of death, or other variables is recommended.\n")
-
-# --- End of EDA script ---
-
-
+fertility |> group_by(area_type) |> summarise(mean_fert_rate = mean(fert_rate, na.rm = TRUE)) |> print()
+mortality |> group_by(area_type) |> summarise(mean_mort_rate = mean(mort_rate, na.rm = TRUE)) |> print()

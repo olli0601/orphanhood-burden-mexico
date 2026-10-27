@@ -7,32 +7,17 @@
 # Reads : remote URLs (CONAPO, GADM)
 # Writes: input-data-raw/{births,deaths,population,marginalization,geometries,census}/
 # Run    : first — everything else depends on these raw files.
+# Sources (README.md, "Data"):
+#   INEGI  registered births and deaths   INEGI  census locality tables (ITER)
+#   CONAPO municipal marginalization      CONAPO municipal population
+#   GADM   municipal geometries v4.1
+# INEGI births 2017-2024 download automatically; earlier births and all deaths
+# are request-gated and must be placed by hand (checked below).
 # =============================================================================
-
-# get_input_data_raw.R
-# ---------------------------------------------------------------------------
-# Download the raw input data for the Mexico orphanhood-burden analysis into
-# `input-data-raw/`. Sources are described in README.md (# Data section):
-#
-#   1. INEGI  - Estadisticas de Nacimientos Registrados   (fertility / births)
-#   2. INEGI  - Estadisticas de Defunciones Registradas   (mortality / deaths)
-#   3. CONAPO - Indice de Marginacion Municipal (IMM)      (marginalization)
-#   4. gob.mx - municipal population statistics            (population)
-#   5. GADM   - municipal geometries v4.1                  (spatial units)
-#   6. INEGI  - 2020/2010 census locality tables (ITER)    (marginalization inputs)
-#
-# Run from the repository root:   Rscript R/get_input_data_raw.R
-#
-# NOTE on INEGI: the INEGI open-data portal (https://en.www.inegi.org.mx/
-# datosabiertos/) serves the per-year birth/death files through a JavaScript
-# download widget, so there is no stable, guessable direct file URL. You must
-# copy the per-year ZIP links from the portal into the `inegi_births_urls` /
-# `inegi_deaths_urls` vectors below (or use the Dropbox / INSP mirrors noted
-# there). Everything else downloads automatically.
-# ---------------------------------------------------------------------------
 
 suppressMessages(library(tools))
 source("R/manifest.R")
+source("R/inputs.R")
 
 # --- configuration ---------------------------------------------------------
 
@@ -52,22 +37,12 @@ for (d in dirs) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 options(timeout = max(1200, getOption("timeout")))
 
 # --- TLS: complete the CONAPO certificate chain ------------------------------
-# conapo.segob.gob.mx (population + marginalization) serves ONLY its leaf
-# certificate (CN=*.segob.gob.mx) and omits the intermediate
-# "Go Daddy Secure Certificate Authority - G2". macOS' system curl hides this
-# (Keychain has the intermediate and does AIA fetching), but the conda/pixi CA
-# bundle is root-only, so R's download.file() aborts with
-#   "SSL peer certificate or SSH remote key was not OK"
-# and every CONAPO file silently ends up as [FAIL] while the script exits 0.
-#
-# Fix: append the published intermediate to a session-local copy of the CA
-# bundle and point libcurl at it. Certificate verification stays FULLY enabled —
-# we are supplying a missing link in the chain, not disabling any check. The
-# intermediate is fetched from certs.godaddy.com, which has a complete chain of
-# its own (so this download works before the fix is in place).
-#
-# Built in tempdir() rather than committed: it is a derived artefact, and the
-# intermediate expires 2031-05-03, which would rot silently in version control.
+# conapo.segob.gob.mx serves only its leaf certificate, omitting the
+# intermediate "Go Daddy Secure Certificate Authority - G2". The pixi CA bundle
+# is root-only, so download.file() fails with "SSL peer certificate ... not OK".
+# Append the published intermediate to a session-local copy of the bundle;
+# verification stays fully enabled. Built in tempdir() because the intermediate
+# expires (2031-05-03).
 .ensure_conapo_ca <- function() {
   base <- Sys.getenv("CURL_CA_BUNDLE")
   if (!nzchar(base) || !file.exists(base)) {
@@ -90,8 +65,7 @@ options(timeout = max(1200, getOption("timeout")))
     itm <- file.path(tempdir(), "gdig2.crt.pem")
     download.file("https://certs.godaddy.com/repository/gdig2.crt.pem",
                   itm, mode = "wb", quiet = TRUE)
-    # A login/error page instead of a certificate would be far larger, and must
-    # not be concatenated into the trust bundle.
+    # Never append a non-certificate (e.g. an error page) to the trust bundle.
     txt <- readLines(itm, warn = FALSE)
     if (!any(grepl("^-----BEGIN CERTIFICATE-----", txt))) {
       stop("fetched intermediate is not PEM (got ", length(txt), " lines)")
@@ -114,27 +88,14 @@ message("== TLS setup (CONAPO chain) ==")
 .ensure_conapo_ca()
 
 # --- helper ----------------------------------------------------------------
-
-# Download `url` to `dest`. Skips if already present, warns (does not abort) on
-# failure, and flags suspiciously small files (INEGI returns a ~2 KB HTML stub
-# for URLs that do not resolve, so a tiny "success" usually means a dead link).
-#
-# If `unzip = TRUE`, the downloaded archive is extracted into `exdir` (default:
-# the directory holding `dest`) and the .zip is deleted afterwards.
-#
-# Re-run skipping is decided from a PAYLOAD MANIFEST (R/manifest.R), not from
-# `marker`. `marker` was usually a directory, and a directory left behind by a
-# half-finished unzip satisfied file.exists() forever: that is how
-# natalidad_2017..2023 came to report "[skip] already extracted" while holding
-# only catalogos/ files, which ch1_011 then had to repair (see its comment at
-# the births .zip loop). `marker` is retained only as the manifest key.
-# `only` (a regex) extracts just the matching members. The INEGI vital-stats
-# zips ship ~180 catalogue files per year that no pipeline step reads, and one
-# of them is named `catalogos/año_nacimiento.csv`: utils::unzip() aborts on that
-# non-UTF8 filename with "Illegal byte sequence", leaving a partial extraction.
-# The old directory-existence skip then declared the year done forever. Passing
-# `only` sidesteps the bad member entirely - the same approach ch1_011's repair
-# loop already takes.
+# Download `url` to `dest`, retrying, and flag files under `min_bytes` (INEGI
+# answers dead links with a ~2 KB HTML page). Failures are reported, not raised;
+# the required-files check at the end raises.
+#   unzip  : extract into `exdir` (default: dirname(dest)) and delete the .zip
+#   marker : manifest key; an unzipped download is skipped when its manifest
+#            verifies (R/manifest.R)
+#   only   : regex of members to extract. INEGI zips ship ~180 catalogue files,
+#            one with a non-UTF8 name that makes utils::unzip() abort.
 fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
                   exdir = NULL, marker = NULL, only = NULL) {
   force_dl <- env_flag("ORPHAN_FORCE_DOWNLOAD")
@@ -153,9 +114,7 @@ fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
     return(invisible(TRUE))
   }
   message(sprintf("  [get ] %s", basename(dest)))
-  # Retry: conapo.segob.gob.mx intermittently answers a valid path with a 301
-  # to www.gob.mx, which 404s (observed 2026-10 on the 90-15 CSV; the next
-  # request succeeded).
+  # Retry: CONAPO intermittently redirects a valid path to a 404.
   for (attempt in 1:3) {
     ok <- tryCatch(
       {
@@ -203,8 +162,6 @@ fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
       }
     )
     if (length(members)) {
-      # Record what actually landed, so the next run verifies the payload
-      # instead of trusting that a directory exists.
       if (!is.null(marker)) {
         rel <- sub(paste0("^", normalizePath(raw_dir, mustWork = FALSE), "/?"), "",
                    normalizePath(members, mustWork = FALSE))
@@ -223,76 +180,36 @@ fetch <- function(url, dest, min_bytes = 10000, unzip = FALSE,
 # ===========================================================================
 # 1-2. INEGI births & deaths
 # ===========================================================================
-# Paste the per-year ZIP/CSV URLs copied from the INEGI open-data portal here.
-# Portal path: Datos Abiertos -> Administrative Records-Statistics -> Vital ->
-# "Registered Births Statistics" / "Registered Deaths Statistics".
-# Public portal covers 2017-2023; pre-2017 (from 1990) were obtained courtesy
-# of Jose Manuel Aburto (Dropbox mirrors below).
-#
-# Leave a vector empty to skip that source.
-
-# INEGI registered-births open data — stable direct URLs (verified 2026-06).
-# Only 2017-2024 are published at the open-data path; 1985-2016 are request-gated
-# (NADA microdata form) and must be added manually. Naming: 2017-2022 use
-# "natalidad", 2023-2024 use "enr". CSV through preprocess_fertility() reproduces
-# the fert_YYYY tables exactly (validated for 2020).
-.inegi_nat <- "https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos"
-inegi_births_urls <- c(
-  "2017" = file.path(.inegi_nat, "2017/conjunto_de_datos_natalidad_2017_csv.zip"),
-  "2018" = file.path(.inegi_nat, "2018/conjunto_de_datos_natalidad_2018_csv.zip"),
-  "2019" = file.path(.inegi_nat, "2019/conjunto_de_datos_natalidad_2019_csv.zip"),
-  "2020" = file.path(.inegi_nat, "2020/conjunto_de_datos_natalidad_2020_csv.zip"),
-  "2021" = file.path(.inegi_nat, "2021/conjunto_de_datos_natalidad_2021_csv.zip"),
-  "2022" = file.path(.inegi_nat, "2022/conjunto_de_datos_natalidad_2022_csv.zip"),
-  "2023" = file.path(.inegi_nat, "2023/conjunto_de_datos_enr2023_csv.zip"),
-  "2024" = file.path(.inegi_nat, "2024/conjunto_de_datos_enr2024_csv.zip")
-)
-
-# INEGI registered-deaths open data — the mortalidad open-data file-naming was
-# not confirmed by direct probe; add per-year URLs from the portal as needed.
-inegi_deaths_urls <- c(
-)
-
-# Dropbox mirrors shared by Jose Manuel Aburto (pre-processed by registration
-# year). NOTE: these are Dropbox *Transfer* links - browser-only (the download
-# is CSRF/cookie-gated, returns 403 to scripts) and time-limited, so they
-# CANNOT be auto-pulled here. Open in a browser and drop the files into
-# input-data-raw/births and input-data-raw/deaths manually:
+# Births 2017-2024 have stable open-data URLs ("natalidad" to 2022, "enr" from
+# 2023). Deaths have none confirmed; add per-year URLs to `inegi_urls$deaths`.
+# Pre-2017 births and all deaths come from J.M. Aburto's Dropbox transfers
+# (browser-only, time-limited) or the INSP RIISP mirror:
 #   fertility : https://www.dropbox.com/t/IKzEQFCeuFFFKi5h
 #   mortality : https://www.dropbox.com/t/ZIbYNxir2hkWTx29
-# Consolidated INEGI vital-stats mirror (births 1985-2024), INSP RIISP:
 #   https://riisp.insp.mx/nada/index.php/catalog/study/MEX-INSP-EVNAC-1985-2024
+.inegi_nat <- "https://www.inegi.org.mx/contenidos/programas/natalidad/datosabiertos"
+inegi_urls <- list(
+  births = stats::setNames(
+    file.path(.inegi_nat, 2017:2024,
+              c(sprintf("conjunto_de_datos_natalidad_%d_csv.zip", 2017:2022),
+                sprintf("conjunto_de_datos_enr%d_csv.zip", 2023:2024))),
+    2017:2024),
+  deaths = character())
+inegi_prefix <- c(births = "natalidad", deaths = "defunciones")
 
-message("== INEGI births ==")
-if (length(inegi_births_urls) == 0) {
-  message("  [skip] no URLs set in `inegi_births_urls` - see comments above.")
-} else {
-  for (yr in names(inegi_births_urls)) {
-    u <- inegi_births_urls[[yr]]
-    out <- file.path(dirs["births"], sprintf("natalidad_%s", yr))
-    fetch(u, paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out,
+for (src in names(inegi_urls)) {
+  message("== INEGI ", src, " ==")
+  urls <- inegi_urls[[src]]
+  if (!length(urls)) message("  [skip] no URLs set in `inegi_urls$", src, "`")
+  for (yr in names(urls)) {
+    out <- file.path(dirs[src], sprintf("%s_%s", inegi_prefix[[src]], yr))
+    fetch(urls[[yr]], paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out,
           only = "conjunto_de_datos/.*[.]csv$")
   }
 }
 
-message("== INEGI deaths ==")
-if (length(inegi_deaths_urls) == 0) {
-  message("  [skip] no URLs set in `inegi_deaths_urls` - see comments above.")
-} else {
-  for (yr in names(inegi_deaths_urls)) {
-    u <- inegi_deaths_urls[[yr]]
-    out <- file.path(dirs["deaths"], sprintf("defunciones_%s", yr))
-    fetch(u, paste0(out, ".zip"), unzip = TRUE, exdir = out, marker = out,
-          only = "conjunto_de_datos/.*[.]csv$")
-  }
-}
-
-# --- manual INEGI files (cannot be auto-downloaded) ------------------------
-# Births 1985-2016 and ALL deaths years are request-gated (JS widget / NADA form
-# / shared mirrors) and must be dropped into input-data-raw/{births,deaths}/ by
-# hand. The lists below are the exact filenames used in this analysis (courtesy
-# J.M. Aburto + INEGI open data). They are checked for presence on each run so a
-# missing file is reported instead of silently producing an incomplete panel.
+# --- manual INEGI files ------------------------------------------------------
+# Exact filenames used in this analysis, checked so a missing year is reported.
 births_manual <- c(
   "Natalidad 1985 Database.zip", "Natalidad Database 1986.zip",
   "Natalidad 1987 Database.zip", "Natalidad Database 1988.zip",
@@ -330,8 +247,7 @@ deaths_manual <- c(
 )
 
 message("== manual files check (births 1985-2016 + all deaths) ==")
-# A manual file counts as present whether it is the original .zip or the
-# committed .tar.zst archive (see scripts-R/ch1_011_extract_raw_archives.R).
+# Present as the original .zip or as the committed .tar.zst (see ch1_011).
 .check_manual <- function(files, subdir) {
   present <- function(f) {
     cand <- c(f, paste0(sub("[.]zip$", "", f), ".tar.zst"))
@@ -352,9 +268,8 @@ message("== manual files check (births 1985-2016 + all deaths) ==")
 # ===========================================================================
 # 3. CONAPO - Indice de Marginacion Municipal (IMM)
 # ===========================================================================
-# Direct datos-abiertos municipal workbooks (verified 2026-06). 2010 & 2015 use
-# the DP2 (penalised-distance) method and the .xlsx extension; 2020 is .xls.
-# All under the same CONAPO open-data path; listed on the gob.mx 2020 release:
+# Municipal workbooks; 2010 and 2015 are the DP2 (penalised-distance) re-runs.
+# Listed on the gob.mx 2020 release:
 # https://www.gob.mx/conapo/documentos/indices-de-marginacion-2020-284372
 message("== CONAPO marginalization (IMM) ==")
 .imm <- "https://conapo.segob.gob.mx/work/models/CONAPO/Datos_Abiertos/Municipio"
@@ -362,9 +277,8 @@ fetch(file.path(.imm, "IMM_2020.xls"),      file.path(dirs["marginalization"], "
 fetch(file.path(.imm, "IMM_DP2_2015.xlsx"), file.path(dirs["marginalization"], "IMM_DP2_2015.xlsx"), min_bytes = 5000)
 fetch(file.path(.imm, "IMM_DP2_2010.xlsx"), file.path(dirs["marginalization"], "IMM_DP2_2010.xlsx"), min_bytes = 5000)
 
-# 1990-2015 series (1990, 1995, 2000, 2005, 2010, 2015 stacked; PCA-era index):
-# raw indicator percentages per municipality-year, for the fixed-weight index
-# in ch2_055. Listed on the 1990-2010 and 2015 release pages:
+# 1990-2015 stacked series (PCA-era): indicator percentages per municipality-
+# year, for ch2_055's fixed-weight index. Listed on:
 # https://www.gob.mx/conapo/documentos/indices-de-marginacion-1990-2010
 fetch(file.path(.imm, "Base_Indice_de_marginacion_municipal_90-15.csv"),
       file.path(dirs["marginalization"], "Base_Indice_de_marginacion_municipal_90-15.csv"),
@@ -373,12 +287,8 @@ fetch(file.path(.imm, "Base_Indice_de_marginacion_municipal_90-15.csv"),
 # ===========================================================================
 # 4. CONAPO - municipal population (BD municipales, "pry23" reconstruction)
 # ===========================================================================
-# CONAPO "Reconstruccion y proyecciones de la poblacion de los municipios de
-# Mexico": population by municipality, sex, and (single / five-year) age, 1950-
-# 2070. `00_Republica_mexicana.zip` is the national file (all 32 states); the
-# per-state files live under the same DBMun/ path if you only need a subset.
-# These direct URLs are the ones embedded in the gob.mx "interactive PDF"
-# (BD_municipales_portada_regiones_FINAL.pdf), also fetched below for reference.
+# Population by municipality, sex and age, 1950-2070 (national file, all
+# states). URLs from the gob.mx "interactive PDF", also fetched for reference.
 message("== CONAPO municipal population ==")
 fetch(
   "https://conapo.segob.gob.mx/work/models/CONAPO/pry23/DBMun/00_Republica_mexicana.zip",
@@ -407,12 +317,8 @@ fetch(
 # ===========================================================================
 # 6. INEGI - census locality tables (ITER), 2020 and 2010
 # ===========================================================================
-# CONAPO's 2020 index replaced "15+ without complete primary" with "15+ without
-# basic education", so ch2_055 rebuilds the old education indicator for 2020
-# from ITER (municipal-total rows, LOC == 0000), following Pelaez (2023). The
-# 2010 file is for validating that reconstruction against CONAPO's published
-# 2010 value. Only the data CSV is extracted. INEGI answers missing files with
-# HTTP 200 and a ~2 KB HTML page, which min_bytes catches.
+# ch2_055 rebuilds "15+ without complete primary" for 2020 from ITER (CONAPO
+# 2020 publishes a different education variable); 2010 validates the rebuild.
 message("== INEGI census ITER ==")
 .iter <- "https://www.inegi.org.mx/contenidos/programas/ccpv"
 fetch(file.path(.iter, "2020/datosabiertos/iter/iter_00_cpv2020_csv.zip"),
@@ -425,46 +331,17 @@ fetch(file.path(.iter, "2010/datosabiertos/iter_nal_2010_csv.zip"),
       marker = file.path(dirs["census"], "iter_00_cpv2010"))
 
 # ===========================================================================
-# 7. Verify the auto-downloaded files later chapters actually require
+# 7. Fail if a required auto-downloaded file is missing or a stub
 # ===========================================================================
-# fetch() reports failures with message() and returns FALSE rather than
-# aborting, so a dead link or TLS problem would otherwise leave this script
-# exiting 0 with missing data - only surfacing much later as a confusing error
-# inside ch1_015 / ch2_010. Fail loudly here instead.
 message("== required auto-downloaded files ==")
-required <- c(
-  "population (CONAPO quinquennial)" =
-    file.path(dirs["population"], "00_Republica_mexicana", "1_Grupo_Quinq_00_RM.xlsx"),
-  "marginalization IMM 2020" = file.path(dirs["marginalization"], "IMM_2020.xls"),
-  "marginalization IMM 2015" = file.path(dirs["marginalization"], "IMM_DP2_2015.xlsx"),
-  "marginalization IMM 2010" = file.path(dirs["marginalization"], "IMM_DP2_2010.xlsx"),
-  "marginalization IMM 1990-2015" =
-    file.path(dirs["marginalization"], "Base_Indice_de_marginacion_municipal_90-15.csv"),
-  "census ITER 2020" = file.path(dirs["census"], "iter_00_cpv2020", "conjunto_de_datos",
-                                 "conjunto_de_datos_iter_00CSV20.csv"),
-  "census ITER 2010" = file.path(dirs["census"], "iter_00_cpv2010", "conjunto_de_datos",
-                                 "iter_00_cpv2010.csv"),
-  "GADM geometries"          = file.path(dirs["geometries"], "gadm41_MEX_2.json")
-)
-missing_required <- character(0)
-for (lbl in names(required)) {
-  f <- required[[lbl]]
-  # Size guard as well as existence: a dead link or captive portal yields a
-  # small HTML stub, which would pass a bare file.exists() check.
-  if (file.exists(f) && file.info(f)$size > 10000) {
-    message(sprintf("  [ok  ] %s (%.1f MB)", lbl, file.info(f)$size / 1024^2))
-  } else {
-    message(sprintf("  [MISS] %s -> %s", lbl, f))
-    missing_required <- c(missing_required, lbl)
-  }
+size <- stats::setNames(file.size(REQUIRED_RAW_FILES), names(REQUIRED_RAW_FILES))
+ok <- !is.na(size) & size > MIN_RAW_BYTES
+for (lbl in names(REQUIRED_RAW_FILES)) {
+  if (ok[[lbl]]) message(sprintf("  [ok  ] %s (%.1f MB)", lbl, size[[lbl]] / 1024^2))
+  else message(sprintf("  [MISS] %s -> %s", lbl, REQUIRED_RAW_FILES[[lbl]]))
 }
-
 message("\nDone. Files written under '", raw_dir, "/'.")
-message("If any INEGI section was skipped, set the URL vectors near the top and re-run.")
-
-if (length(missing_required) > 0) {
-  stop(sprintf(
-    "%d required auto-downloaded file(s) missing: %s.\nThe pipeline cannot start without these (ch1_015 needs the population workbook and IMM_2020.xls). Check the [FAIL]/[WARN] lines above and re-run.",
-    length(missing_required), paste(missing_required, collapse = "; ")
-  ), call. = FALSE)
+if (!all(ok)) {
+  stop(sprintf("%d required auto-downloaded file(s) missing: %s.\nCheck the [FAIL]/[WARN] lines above and re-run.",
+               sum(!ok), paste(names(REQUIRED_RAW_FILES)[!ok], collapse = "; ")), call. = FALSE)
 }

@@ -68,6 +68,8 @@ describes something the code does not implement) · UNVERIFIABLE.
 | 3.16 | Figs 8 vs 9 presented as a matched pair | They use **different GM definitions** (`ntile(IMN,5)` vs the real `GM`) | INCONSISTENT |
 | 3.17 | — | `ch3_040` skips four figures because `municipality_shapes`/`grouped_mun_50000`/`your_data` never exist upstream. One of them is the only candidate producer of **Figure 1** | MISSING |
 | 3.18 | — | `ch3_040:153`, `ch3_050:153,310` drop unknown-age **male** deaths but keep unknown-age female deaths. Asymmetric, unexplained | UNDOCUMENTED |
+| 3.19 | — | `ch3_030` rate histograms by area type, the rate-vs-IMN scatter and the urban/rural mean rates are computed over **raw panel rows**: each row is one unit × year × sex × age band × **registration year**, so its "rate" is only the slice of events registered that year, and the distributions mix age bands and sexes (age dominates the spread). Proposed fix, as done for 3.6: one age-standardised rate per unit-year (fertility per woman on mother rows; mortality per sex). OPEN — to do | UNDOCUMENTED (pooled statistic) |
+| 3.20 | — | Parental-age mortality range, **decided 2026-10-26: women 15–64, men 15–79.** `preprocess_mortality()` keeps women 15–64, men 15–84; `drop_nonparental_ages()` removes men 80–84 in `ch2_040` and `ch3_010` (`ch3_030` drops 80–84 directly). Chapter 5 (`ch5_020`, via `deaths_grouped_mun.RDS`) still includes fathers 80–84 — not yet aligned | DECIDED (Ch 2–3); Ch 5 OPEN |
 
 ## Chapter 4 — GAM nowcast
 

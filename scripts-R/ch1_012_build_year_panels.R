@@ -1,10 +1,7 @@
 # =============================================================================
 # ch1_012_build_year_panels.R  ·  Chapter 1 — Raw microdata -> per-year panels
-# Convert the raw INEGI microdata (extracted by ch1_011 / downloaded by ch1_010)
-# into the per-year panels the rest of the pipeline starts from. This is the
-# step that was missing: preprocess_fertility() / preprocess_mortality() already
-# implement the conversion, but no script called them, so
-# input-data-processed/{fertility,mortality} datasets/ could never be rebuilt.
+# Convert the raw INEGI microdata into the per-year panels the rest of the
+# pipeline starts from, via preprocess_fertility() / preprocess_mortality().
 #
 # Reads : input-data-raw/births/NACIM<YY>.dbf                       (1985-2016)
 #         input-data-raw/births/natalidad_<YYYY>/conjunto_de_datos/ (2017-2024)
@@ -14,18 +11,13 @@
 #         input-data-processed/mortality datasets/mort_<YYYY>.RDS   (1990-2024)
 # Run    : after ch1_010 + ch1_011; before ch1_015.
 #
-# NOTE ON YEARS. Each file holds the events REGISTERED in that year, so the
-# filename year is the registration year (`year_reg`, added here) while `year`
-# from the microdata is the year of OCCURRENCE and can be much earlier — that
-# gap is the registration delay Chapter 3/4 analyse. The 1985-1997 births and
-# 1990-1997 deaths files store the occurrence year as 2 DIGITS, and we
-# deliberately leave it that way: the panels are consumed through
-# load_year_panels() (R/load_year_panels.R:17-20), which converts 2-digit years
-# and drops the 99 sentinel at load time. Calling correct_year() here would
-# double-correct.
+# Years: each file holds events REGISTERED that year (`year_reg`, added here);
+# `year` is the year of occurrence. The 1985-1997 births and 1990-1997 deaths
+# store it as 2 digits; load_year_panels() converts it at load time, so it is
+# deliberately left alone here.
 #
-# Runtime: slow (~30 DBFs read whole into memory, plus 200MB+ CSVs). Completed
-# years are skipped on re-run; set force <- TRUE to rebuild.
+# A year whose panel matches its manifest (rows, event total) is skipped;
+# ORPHAN_FORCE_PANELS=1 rebuilds all (~11 min).
 # =============================================================================
 suppressMessages({
   library(dplyr); library(readr); library(stringr); library(tidyr); library(foreign)
@@ -41,31 +33,14 @@ mort_dir <- file.path(proc, "mortality datasets")
 dir.create(fert_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(mort_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Rebuild every year regardless of the manifest: ORPHAN_FORCE_PANELS=1.
-# This used to be a hardcoded constant, so forcing a rebuild meant editing the
-# script - and editing a script mid-run is how ch3_040 ended up executing out of
-# order during the 2026-08-01 rebuild.
 force <- env_flag("ORPHAN_FORCE_PANELS")
-
-# Per-year payload manifest: (id, rows, total). A panel is trusted only when it
-# exists AND matches its recorded row count and event total. The previous check
-# was `file.exists(out)`, which trusts a file truncated by an interrupted
-# saveRDS forever and then silently under-counts downstream.
 manifest_file <- file.path(proc, ".manifest", "ch1_012.csv")
 
 # --- path resolution --------------------------------------------------------
-# Resolved per year from explicit rules rather than a recursive glob, because:
-#   (a) the raw tree is littered with decoys a glob would happily pick up -
-#       catalogue DBFs (ENTMUN.dbf, CATEMLN*.dbf) sit in the same flat births
-#       folder as the microdata, ~180 files live under natalidad_*/catalogos/,
-#       and deaths/conjunto_de_datos/ contains an 81 MB
-#       defunciones_registradas_2018_bitacora_de_cambios.csv;
-#   (b) INEGI filenames drift unpredictably (deaths 2020 uses the masculine
-#       "registrados"; deaths 2023 has a "_csv" infix BEFORE the extension;
-#       deaths 2024 is "registradas24_csv"; births switch from "natalidad_<YYYY>"
-#       to "enr<YYYY>" in 2023), so patterns cannot be constructed reliably.
-# Extension case also varies (NACIM16.DBF, DEFUN99/13/15/18/19.DBF, several
-# .CSV), so every candidate is probed case-insensitively.
+# Explicit per-year candidates rather than a glob: the raw tree holds decoys
+# (catalogue DBFs beside the births microdata, an 81 MB 2018 change-log CSV
+# among the deaths), and INEGI filenames drift between years. Extension case
+# varies too (.DBF/.dbf, .CSV/.csv), so both are probed.
 
 # Return the first candidate that exists, trying upper/lower-case extensions.
 .resolve <- function(candidates) {
@@ -115,36 +90,18 @@ deaths_path <- function(y) {
 }
 
 # --- build one panel --------------------------------------------------------
-# Adds year_reg (the registration year, i.e. the file's year) so the output
-# matches the schema load_year_panels() and ch1_015 expect:
-#   year, sex, age, mun, births|deaths, year_reg
+# Schema: year, sex, age, mun, births|deaths, year_reg.
 build_panel <- function(y, resolver, preprocess, out_dir, prefix, value_col) {
   id  <- sprintf("%s_%d", prefix, y)
   out <- file.path(out_dir, sprintf("%s.RDS", id))
 
-  # Verify the payload, not the filename. Re-reading the RDS costs a fraction of
-  # a second against the 13-15 s it takes to rebuild a fertility year.
   if (file.exists(out) && !force) {
-    rec <- table_manifest_get(manifest_file, id)
-    if (is.null(rec)) {
-      message(sprintf("  [redo] %s : no manifest entry", id))
-    } else {
-      chk <- tryCatch({
-        d <- readRDS(out)
-        if (nrow(d) == rec$rows && isTRUE(all.equal(sum(d[[value_col]], na.rm = TRUE), rec$total))) {
-          "ok"
-        } else {
-          sprintf("expected %d rows / %s %s, found %d / %s",
-                  rec$rows, format(rec$total, big.mark = ","), value_col,
-                  nrow(d), format(sum(d[[value_col]], na.rm = TRUE), big.mark = ","))
-        }
-      }, error = function(e) paste("unreadable:", conditionMessage(e)))
-      if (identical(chk, "ok")) {
-        message(sprintf("  [skip] %s verified (%s rows)", id, format(rec$rows, big.mark = ",")))
-        return(invisible(rec$total))
-      }
-      message(sprintf("  [redo] %s : %s", id, chk))
+    chk <- panel_manifest_check(out, id, value_col, manifest_file)
+    if (chk$ok) {
+      message(sprintf("  [skip] %s verified (%s rows)", id, format(chk$rows, big.mark = ",")))
+      return(invisible(chk$total))
     }
+    message(sprintf("  [redo] %s : %s", id, chk$reason))
   }
 
   f <- resolver(y)

@@ -1,11 +1,9 @@
-# load_year_panels.R
-# Load all per-year processed panels from a subdirectory of input-data-processed/
-# (e.g. "mortality datasets" / "fertility datasets") into one long data frame,
-# adding `year_reg` (from the filename) and correcting the 2-digit occurrence
-# year stored in the early files (1985-1997: 90 -> 1990, drops the 99 sentinel,
-# via correct_year()). Replaces the duplicated load loop + mget()/correct_year()
-# pattern in ch2_040 / ch2_050 / ch2_060.
+# Loading the per-year event panels (input-data-processed/{fertility,mortality} datasets/).
 # =============================================================================
+
+# All per-year panels in `subdir` as one long frame. Adds `year_reg` from the
+# filename when absent, and converts the 2-digit occurrence year of the
+# `correct_years` files (19xx), dropping their 99 "unknown year" sentinel.
 load_year_panels <- function(subdir, dir = "input-data-processed",
                              correct_years = 1985:1997) {
   files <- list.files(file.path(dir, subdir), pattern = "[.]RDS$", full.names = TRUE)
@@ -15,7 +13,6 @@ load_year_panels <- function(subdir, dir = "input-data-processed",
     d  <- readRDS(f)
     if (!"year_reg" %in% names(d)) d$year_reg <- yr
     if (as.integer(yr) %in% correct_years) {
-      # 2-digit occurrence year -> 19xx; drop the 99 sentinel (cf. correct_year())
       d <- d[d$year != 99, , drop = FALSE]
       d$year <- as.numeric(paste0("19", stringr::str_pad(as.character(d$year), 2, "left", "0")))
     }
@@ -23,24 +20,19 @@ load_year_panels <- function(subdir, dir = "input-data-processed",
   }))
 }
 
-# Unknown parental age (INEGI code 99) -----------------------------------------
-# preprocess_fertility() keeps births whose parent's age is coded 99 as
-# age = NA. This spreads each such count over the age bands in proportion to the
-# known-age births of the same parent sex in the same panel cell: municipality x
-# occurrence year x registration year. A cell with no known-age births borrows
-# the profile of its state, then of the country, for the same sex and years.
+# Unknown parental age (INEGI code 99) is kept as age = NA by
+# preprocess_fertility(). This spreads each such count over the age bands in
+# proportion to the known-age births of the same parent sex in the same panel
+# cell (municipality x occurrence year x registration year), falling back to
+# the state, then the national profile, when the cell has no known-age births.
+# Applied to mothers and fathers alike. Assumes unknown-age records share the
+# known-age profile of their cell, which they need not
+# (docs/memo_unknown_parental_age.md). Counts become fractional; total births
+# are conserved exactly.
 #
-# Decided with Oliver (Oct 2026): plain proportional redistribution, applied to
-# mothers and fathers alike. Assumes unknown-age records share the age profile of
-# the known-age ones in their cell. They are not missing at random
-# (docs/memo_unknown_parental_age.md), and most father-99 records probably have
-# no father on them at all, so this raises paternal counts and hence paternal
-# orphanhood. Counts become fractional; total births are conserved exactly.
-#
-# KNOWN ISSUE (deferred): year_reg in the cell key makes late registrations fall
-# through to the state profile, which can place births in zero-population bands
-# (Inf rates in municipal fert.RDS; grouped panels unaffected). See "Open issue"
-# in docs/memo_unknown_parental_age.md.
+# Known issue: with year_reg in the cell key, late registrations fall through to
+# the state profile and can land in zero-population bands (Inf rates in
+# municipal fert.RDS; grouped panels unaffected). See the memo's "Open issue".
 redistribute_unknown_age <- function(births, value_col = "births") {
   keys  <- c("sex", "year", "year_reg")
   cells <- c("mun", keys)
@@ -93,19 +85,16 @@ redistribute_unknown_age <- function(births, value_col = "births") {
   out
 }
 
-# The births panels with unknown parental age redistributed. Every consumer of
-# births goes through this rather than load_year_panels() directly.
+# Birth panels with unknown parental age redistributed. Read births through
+# this, never load_year_panels() directly.
 load_birth_panels <- function(dir = "input-data-processed", ...) {
   redistribute_unknown_age(load_year_panels("fertility datasets", dir = dir, ...))
 }
 
-# Collapse registration years: one row per cell, events summed over year_reg,
-# population kept once. Events frames with population joined on carry one row
-# per year_reg with the cell's population repeated on each, so summing
-# `population` over them (e.g. up to national) counts it once per row - 2x to
-# 19x for female fertility depending on the year. Call this before any such sum.
-# Stops if population is not constant within a cell, i.e. if the frame is not
-# what this assumes.
+# One row per cell with events summed over registration years and population
+# kept once. Events frames carry a row per year_reg with the cell's population
+# repeated, so summing population before this counts it once per row. Stops if
+# population is not constant within a cell.
 collapse_year_reg <- function(df, count_col,
                               keys = intersect(c("group_id", "mun", "year", "sex", "age"),
                                                names(df))) {
@@ -118,16 +107,4 @@ collapse_year_reg <- function(df, count_col,
     stop("collapse_year_reg: population varies within ", sum(out$n_pop > 1),
          " cells of ", paste(keys, collapse = " x "), ".")
   dplyr::select(out, -n_pop)
-}
-
-# Registration delay (occurrence -> registration), with an optional bucketed
-# factor capping at `max_delay`+. bucket = FALSE returns the raw numeric delay.
-add_delay <- function(df, max_delay = 5, bucket = TRUE) {
-  df <- dplyr::mutate(df, delay = as.numeric(year_reg) - as.numeric(year))
-  if (bucket) {
-    df <- dplyr::mutate(df,
-      delay = dplyr::if_else(delay > max_delay, paste0(max_delay, "+"), as.character(delay)),
-      delay = factor(delay, levels = c(as.character(0:max_delay), paste0(max_delay, "+"))))
-  }
-  df
 }
