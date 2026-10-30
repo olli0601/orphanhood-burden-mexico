@@ -22,6 +22,7 @@ suppressPackageStartupMessages({
 })
 
 source("R/rates.R")
+source("R/load_year_panels.R")   # collapse_year_reg()
 source("R/marginalization.R")
 
 fig_dir <- marg_fig_dir("output/ch5")  # output/ch5_fw when ORPHAN_MARG=fw
@@ -862,7 +863,7 @@ mpi <- st_drop_geometry(mpi) |>
   select(group_id, year, IMN) |>
   distinct()
 
-std_raw <- compute_std_fert_rate(fert_df_year);
+std_raw <- compute_std_fert_rate(fert_df_year, std_pop = std_ref_population(population_df_long));
 std_raw_year <- std_raw %>% 
   left_join(y = geo_info_grouped_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 
   left_join(y = mpi, by = c("group_id", "year")) %>% 
@@ -961,15 +962,17 @@ to_exclude <- c(as.character(1:15), "80-84")
 
 deaths <- deaths[!deaths$age %in% to_exclude, ]
 
+# deaths_grouped_mun has one row per registration year; collapse_year_reg()
+# sums deaths over them and keeps the cell's population once.
 mort_df_year <- deaths |>
-  filter(year>= 2010) |>
+  filter(year>= 2010, !is.na(age)) |>
   select(group_id, year, sex, age, tot_deaths) |>
   left_join(population_df, by = c("group_id", "year", "sex", "age")) |>
-  group_by(group_id, year, sex, age) |>
-  summarise(deaths = sum(tot_deaths), population = sum(population), .groups = "drop")|>
+  collapse_year_reg("tot_deaths") |>
+  rename(deaths = tot_deaths) |>
   mutate(mort_rate = deaths/population)
 
-std_raw_mort <- compute_std_mort_rate(mort_df_year);
+std_raw_mort <- compute_std_mort_rate(mort_df_year, std_pop = std_ref_population(population_df));
 
 std_raw_mort_year <- std_raw_mort %>% 
   left_join(y = geo_info_grouped_mun |> dplyr::select(group_id, capital), by = "group_id") %>% 

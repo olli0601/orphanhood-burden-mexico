@@ -70,7 +70,8 @@ std_ref_population <- function(population, ref_year = 2020) {
 #              fertility every birth is on a mother's and a father's row.
 .std_rate_by_unit <- function(data, rte, out_col, unit_col, std_pop, what,
                               by_sex = TRUE) {
-  data <- .drop_unstandardisable(data, rte, what)
+  data <- .drop_unstandardisable(data, rte, what) |>
+    dplyr::mutate(sex = as.character(sex), age = as.character(age))
 
   if (is.null(std_pop)) {
     std_pop <- data |>
@@ -80,6 +81,15 @@ std_ref_population <- function(population, ref_year = 2020) {
       dplyr::group_by(sex, age) |>
       dplyr::summarise(p_nat = sum(population, na.rm = TRUE), .groups = "drop")
   }
+  # Weights over the (sex, age) cells in the data only: a full population table
+  # (ages 0-14, 65+) would otherwise leave weights summing to less than 1.
+  cells <- dplyr::distinct(data, sex = as.character(sex), age = as.character(age))
+  std_pop <- std_pop |>
+    dplyr::mutate(sex = as.character(sex), age = as.character(age)) |>
+    dplyr::semi_join(cells, by = c("sex", "age"))
+  miss <- dplyr::anti_join(cells, std_pop, by = c("sex", "age"))
+  if (nrow(miss)) stop(what, ": no reference population for ",
+                       paste(miss$sex, miss$age, collapse = ", "))
   w <- std_pop |>
     dplyr::group_by(dplyr::across(dplyr::any_of(if (by_sex) "sex"))) |>
     dplyr::mutate(w = p_nat / sum(p_nat, na.rm = TRUE)) |>

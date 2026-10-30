@@ -19,7 +19,11 @@ marg_index <- readRDS(marg_file("index_grouped_mun")) |>
   add_marg_quintile() |>
   select(-c(GM, marginalization_quintile))
 
-deaths_grouped_mun <- aggregate_to_grouped_mun(readRDS("input-data-processed/deaths.RDS"), "deaths")
+# Unknown-age deaths (~0.5%) are dropped: they have no age band, so they never
+# enter the rates or Chapter 5, and may include non-parental ages.
+deaths_grouped_mun <- readRDS("input-data-processed/deaths.RDS") |>
+  filter(!is.na(age)) |>
+  aggregate_to_grouped_mun("deaths")
 births_grouped_mun <- aggregate_to_grouped_mun(readRDS("input-data-processed/births.RDS"), "births")
 
 # --- Delay shares and delay by sex, age and marginalization ----------------------
@@ -54,8 +58,7 @@ delay_figures <- function(grouped, value, reg_word, share_rows = grouped, point_
   # Delay by sex, age and marginalization, 2010-2020
   d <- grouped |>
     filter(year >= 2010 & year <= 2020) |>
-    left_join(marg_index, by = c("group_id", "year")) |>
-    filter(!(sex == "male" & is.na(age)))
+    left_join(marg_index, by = c("group_id", "year"))
   ylab <- tools::toTitleCase(value)
 
   save_fig(ggplot(d, aes(x = delay, fill = sex, weight = .data[[value]])) +

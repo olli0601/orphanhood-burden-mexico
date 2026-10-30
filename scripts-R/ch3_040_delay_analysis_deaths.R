@@ -26,7 +26,7 @@ save_fig(plot_delay_bars(filter(delays, year >= 1990), "year_reg", "total", dela
 # Unmatched municipalities are kept here as group_id = NA.
 aggregated_muni_50000 <- readRDS("input-data-processed/aggregated_muni_50000.RDS")
 delay_df <- aggregate_to_grouped_mun(deaths, "deaths", out_col = "tot_deaths", drop_unmatched = FALSE) |>
-  filter(!(sex == "male" & is.na(age)), year >= 1990) |>
+  filter(!is.na(age), year >= 1990) |>   # unknown-age deaths (~0.5%) dropped, as in the rates
   add_delay(bucket = FALSE)
 
 # --- Delay vs marginalization grade (death-weighted unit-year means, 2010-2020) ---
