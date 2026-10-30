@@ -87,6 +87,13 @@ cor_test_result <- tryCatch(cor.test(municipality_summary$poverty_index, municip
 if (!is.null(cor_test_result)) print(cor_test_result)
 summary(lm(avg_delay ~ poverty_index, data = municipality_summary))
 
+# --- Delay vs deprivation per year, both indices (1990-2020) --------------------------
+dvd <- delay_vs_deprivation(unit_mean_delay(delay_df, "tot_deaths"), "death")
+write.csv(dvd$slopes, file.path(fig_dir, "ch3_040_delay_vs_deprivation_slopes.csv"), row.names = FALSE)
+save_fig(dvd$plot, "ch3_040_delay_vs_deprivation_by_year.pdf", 13, 5.5)
+write.csv(dvd$slopes_point, file.path(fig_dir, "ch3_040_delay_vs_deprivation_per_point.csv"), row.names = FALSE)
+save_fig(dvd$plot_point, "ch3_040_delay_vs_deprivation_per_point.pdf", 9, 5.5)
+
 # --- Delay by sex, age and year ------------------------------------------------------
 p_delay_hist_by_sex <- ggplot(delay_df, aes(x = delay, weight = tot_deaths)) +
   geom_histogram(bins = 10, fill = "#69b3a2") +

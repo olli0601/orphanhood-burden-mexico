@@ -38,6 +38,12 @@ delay_figures <- function(grouped, value, reg_word, share_rows = grouped, point_
                            title = sprintf("Reporting Delays for %s by Year of Occurrence", value),
                            subtitle = sprintf("Each bar shows the proportion of %s by how many years later they were registered", value)),
            fig("delay_by_occurrence"))
+  save_fig(plot_delay_bars(delays, "year", "prop_occ", pal, limits = 1990:2023, sqrt_y = TRUE,
+                           x = "Year of occurrence", y = paste("Proportion of", value, "(square-root scale)"),
+                           fill = "Delay (year)",
+                           title = sprintf("Reporting Delays for %s by Year of Occurrence", value),
+                           subtitle = sprintf("Share of %s by years until registration; registrations up to 2024", value)),
+           fig("delay_by_occurrence_sqrt"), 9, 9)
   save_fig(plot_delay_bars(delays, "year_reg", "prop_reg", pal, limits = 1990:2023, percent = TRUE,
                            grid = "plain",
                            x = "Year of registration", y = paste("Proportion of", value), fill = "Delay (year)",
@@ -81,6 +87,18 @@ delay_figures <- function(grouped, value, reg_word, share_rows = grouped, point_
 delay_figures(deaths_grouped_mun, "deaths", "Deaths")
 delay_figures(births_grouped_mun, "births", "births", point_size = TRUE,
               share_rows = filter(births_grouped_mun, sex == "female"))
+
+# --- Birth delay vs deprivation per year, both indices (1990-2020; mother rows) --
+# Occurrence years near 2020 have fewer years of follow-up, so their long delays
+# are not yet observed (right-censored); this affects all units in a year alike.
+dvd_births <- delay_vs_deprivation(unit_mean_delay(filter(births_grouped_mun, sex == "female"), "births"),
+                                   "birth")
+write.csv(dvd_births$slopes, file.path(fig_dir, "ch3_050_births_delay_vs_deprivation_slopes.csv"),
+          row.names = FALSE)
+save_fig(dvd_births$plot, "ch3_050_births_delay_vs_deprivation_by_year.pdf", 13, 5.5)
+write.csv(dvd_births$slopes_point, file.path(fig_dir, "ch3_050_births_delay_vs_deprivation_per_point.csv"),
+          row.names = FALSE)
+save_fig(dvd_births$plot_point, "ch3_050_births_delay_vs_deprivation_per_point.pdf", 9, 5.5)
 
 # --- Thesis §3.3: cumulative registration, completeness, mean delay ------------
 # Counts are events throughout; births use mother rows only.

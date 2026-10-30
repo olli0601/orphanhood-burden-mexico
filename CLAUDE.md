@@ -63,6 +63,7 @@ ch3_020  fertility by grouped municipality
 ch3_030  EDA: standardised rates, urban/rural, marginalization
 ch3_040  death registration-delay structure vs deprivation
 ch3_050  birth and death delay vs rates and deprivation
+ch3_060  national age-specific rates, TFR, 18-year cumulative fertility (no nowcast)
 ch4_010..050  GAM birth nowcast: fit/validate -> bias-correct -> barplots -> diagnostics
               -> assemble. Needs `mkdir -p output/ch4` first (no ch4 script creates it)
 ch5_010  single-year long inputs

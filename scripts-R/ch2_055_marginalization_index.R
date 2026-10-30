@@ -177,3 +177,33 @@ write.csv(weights,    file.path(out_dir, "ch2_055_weights.csv"),        row.name
 write.csv(validation, file.path(out_dir, "ch2_055_validation.csv"),     row.names = FALSE)
 write.csv(national,   file.path(out_dir, "ch2_055_national_means.csv"), row.names = FALSE)
 message("Wrote input-data-processed/marg_fixed_weight_mun.RDS (", nrow(panel), " rows)")
+
+# --- 7. Figure: same ranking as CONAPO within year, real change across years --
+# Left: municipal percentile ranks, CONAPO IM vs this index (CONAPO 2020 is
+# flipped so both read higher = more marginalized). Right: this index per
+# census year; CONAPO's IM is re-standardised each round and cannot show this.
+suppressMessages(library(ggplot2))
+ranks <- panel |>
+  filter(!is.na(conapo_IM)) |>
+  mutate(conapo = if_else(year == 2020, -conapo_IM, conapo_IM)) |>
+  group_by(year) |>
+  mutate(r_conapo = percent_rank(conapo), r_fw = percent_rank(marg_index)) |>
+  ungroup()
+rho <- validation |> mutate(lab = sprintf("Spearman %.3f", abs(spearman_vs_conapo_IM)))
+p_rank <- ggplot(ranks, aes(r_conapo, r_fw)) +
+  geom_point(size = 0.3, alpha = 0.3) +
+  geom_text(data = rho, aes(x = 0.02, y = 0.97, label = lab), hjust = 0, size = 3) +
+  facet_wrap(~ year, nrow = 2) +
+  coord_equal() +
+  labs(title = "A. Within each year: same ranking as CONAPO",
+       x = "CONAPO IM, percentile rank", y = "Fixed-weight index, percentile rank") +
+  theme_minimal(base_size = 10)
+p_level <- ggplot(panel, aes(factor(year), marg_index)) +
+  geom_boxplot(outlier.size = 0.3, fill = "grey90") +
+  stat_summary(fun = mean, geom = "point", colour = "firebrick", size = 2) +
+  labs(title = "B. Across years: values change over time",
+       subtitle = "Municipalities; red dot = mean. Previously every year before 2010 took its 2010 value.",
+       x = NULL, y = "Fixed-weight index (0-100, higher = more marginalized)") +
+  theme_minimal(base_size = 10)
+ggsave(file.path(out_dir, "ch2_055_index_vs_conapo.pdf"),
+       gridExtra::arrangeGrob(p_rank, p_level, ncol = 2, widths = c(1.3, 1)), width = 13, height = 6)
