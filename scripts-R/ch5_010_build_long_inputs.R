@@ -22,21 +22,7 @@
 suppressPackageStartupMessages({ library(dplyr); library(tidyr); library(stringr) })
 g <- "input-data-processed/"
 
-# Uniformly split 5-year age bands ("15-19" ...) into single years, dividing the
-# value column by the band width.
-split_to_single <- function(df, value_col) {
-  df |>
-    mutate(age_start = as.integer(str_extract(age, "^\\d+")),
-           age_end   = as.integer(str_extract(age, "\\d+$"))) |>
-    filter(!is.na(age_start), !is.na(age_end)) |>
-    rowwise() |>
-    mutate(.ages = list(seq(age_start, age_end))) |>
-    ungroup() |>
-    mutate(!!value_col := .data[[value_col]] / (age_end - age_start + 1)) |>
-    unnest(.ages) |>
-    mutate(age = .ages) |>
-    select(group_id, year, sex, age, dplyr::all_of(value_col))
-}
+source("R/orphanhood.R")   # split_to_single()
 
 # --- births: parents 15-79 ---------------------------------------------------
 births_long <- readRDS(paste0(g, "births_grouped_mun.RDS")) |>

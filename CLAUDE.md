@@ -67,8 +67,8 @@ ch3_060  national age-specific rates, TFR, 18-year cumulative fertility (no nowc
 ch4_010..050  GAM birth nowcast: fit/validate -> bias-correct -> barplots -> diagnostics
               -> assemble. Needs `mkdir -p output/ch4` first (no ch4 script creates it)
 ch5_010  single-year long inputs
-ch5_011  child mortality from raw microdata (ages 0-17)
-ch5_020  orphanhood incidence + prevalence (the main engine)
+ch5_011  child mortality from raw microdata (ages 0-17) -> child_survival_{national,unit}.RDS
+ch5_020  orphanhood incidence + prevalence; engine in R/orphanhood.R (ORPHAN_SURV=national|unit)
 ch5_030  credible intervals (bootstrap; heaviest step in the project)
 ```
 

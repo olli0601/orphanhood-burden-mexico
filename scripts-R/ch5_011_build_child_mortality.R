@@ -39,8 +39,15 @@ decode_child_age <- function(edad) {
                    TRUE ~ NA_integer_)
 }
 
+# Registration year from the file name: DEFUN99.DBF, ..._2023_csv.CSV, ...registradas24_csv.csv
+registration_year <- function(f) {
+  y <- as.integer(str_extract(basename(f), "[0-9]{4}|[0-9]{2}"))
+  ifelse(y >= 1000L, y, ifelse(y >= 50L, 1900L + y, 2000L + y))
+}
+
 read_child_deaths <- function(f) {
-  ext <- tools::file_ext(f)
+  ext <- tolower(tools::file_ext(f))     # the raw tree mixes .dbf and .DBF
+  year_reg <- registration_year(f)
   d <- tryCatch({
     if (ext == "dbf") foreign::read.dbf(f, as.is = TRUE)
     else data.table::fread(f, showProgress = FALSE, colClasses = "character",
@@ -58,13 +65,21 @@ read_child_deaths <- function(f) {
            sex  = dplyr::case_when(as.character(sexo) == "1" ~ "male",
                                    as.character(sexo) == "2" ~ "female",
                                    TRUE ~ NA_character_))]
+  # Files registered up to 1997 store the occurrence year in two digits, with 99 = unknown.
+  if (year_reg <= 1997L) d[, year := fifelse(year == 99L, NA_integer_, 1900L + year)]
   d <- d[!is.na(age) & !is.na(sex) & ent != 99 & mn != 999 & year >= 1990 & year <= 2023]
   if (nrow(d) == 0) return(NULL)
   d[, mun := paste0(str_pad(ent, 2, pad = "0"), str_pad(mn, 3, pad = "0"))]
-  d[, .(deaths = .N), by = .(mun, year, sex, age)]
+  d[, .(deaths = .N), by = .(mun, year, sex, age)][, `:=`(year_reg = year_reg, file = basename(f))][]
 }
 
-if (file.exists(cache)) {
+# A registered year always has well over 10k infant deaths (minimum about 19k, in 2021).
+child_deaths_complete <- function(d) {
+  infants <- as.data.table(d)[age == 0L, .(deaths = sum(deaths)), by = year]
+  setequal(infants$year, 1990:2023) && all(infants$deaths > 10000)
+}
+
+if (file.exists(cache) && child_deaths_complete(readRDS(cache))) {
   message("ch5_011: using cached child_deaths_group.RDS")
   child_deaths_group <- readRDS(cache)
 } else {
@@ -79,6 +94,7 @@ if (file.exists(cache)) {
                                             shQuote(a), shQuote(td)))))
     files <- list.files(td, pattern = "(?i)(DEFUN.*[.]dbf|defunciones.*[.]csv)$",
                         recursive = TRUE, full.names = TRUE)
+    files <- files[!grepl("bitacora", files, ignore.case = TRUE)]
     for (f in files) {
       cd <- read_child_deaths(f)
       if (!is.null(cd)) child_mun[[length(child_mun) + 1]] <- cd
@@ -87,14 +103,22 @@ if (file.exists(cache)) {
     message("  parsed ", basename(a))
   }
   child_mun <- data.table::rbindlist(child_mun)
-  # dedup: a year can appear in more than one archive -> keep max (most complete)
-  child_mun <- child_mun[, .(deaths = max(deaths)), by = .(mun, year, sex, age)]
+  stopifnot(setequal(child_mun$year_reg, 1990:2024))
+  # A registration year can come in both DBF and CSV: use one file per registration
+  # year, then sum, since a year of occurrence spans several registration years.
+  by_file <- child_mun[, .(deaths = sum(deaths)), by = .(year_reg, file)]
+  dup <- by_file[, if (.N > 1L) .(files = paste(file, deaths, collapse = " / ")), by = year_reg]
+  if (nrow(dup)) { message("ch5_011: registration years in two formats:"); print(dup) }
+  use <- by_file[order(-deaths)][, .SD[1L], by = year_reg][, .(year_reg, file)]
+  child_mun <- child_mun[use, on = .(year_reg, file)][
+    , .(deaths = sum(deaths)), by = .(mun, year, sex, age)]
 
   # map original municipalities -> grouped units
   gm <- sf::st_drop_geometry(readRDS(paste0(g, "grouped_municipality_50000.RDS"))) |>
     dplyr::select(mun, group_id) |> as.data.table()
   child_deaths_group <- merge(child_mun, gm, by = "mun")[
     , .(deaths = sum(deaths)), by = .(group_id, year, sex, age)]
+  stopifnot(child_deaths_complete(child_deaths_group))
   saveRDS(child_deaths_group, cache)
   message("ch5_011: built child_deaths_group.RDS (", nrow(child_deaths_group), " rows)")
 }
@@ -217,3 +241,29 @@ saveRDS(child_survival, paste0(g, "child_survival.RDS"))
 
 cat(sprintf("ch5_011: child_survival.RDS written (%d rows); national 0-17 survival range %.4f-%.4f\n",
             nrow(child_survival), min(child_survival$survival_prob), max(child_survival$survival_prob)))
+
+# -----------------------------------------------------------------------------
+# 6. Survival inputs for the orphanhood engine (R/orphanhood.R)
+#    national: one-year survival, sexes pooled as a ratio of sums (Eq 8)
+#    unit    : indirect standardisation on the national curve, unit relative
+#              risk by age group over a 5-year window, empirical-Bayes shrunk
+#    ch5_020 picks one with ORPHAN_SURV=national|unit (default national).
+# -----------------------------------------------------------------------------
+source("R/orphanhood.R")
+child_pop1 <- single_year_population(readRDS(paste0(g, "population_grouped_mun.RDS")))[age <= 17]
+surv_nat  <- child_survival_1yr(child_deaths_group, child_pop1)
+surv_unit <- child_survival_unit_eb(child_deaths_group, child_pop1)
+saveRDS(surv_nat,  paste0(g, "child_survival_national.RDS"))
+saveRDS(surv_unit, paste0(g, "child_survival_unit.RDS"))
+
+# Registered infant mortality by marginalization grade. Registration of infant
+# deaths is known to be less complete in deprived areas, so a gradient running
+# the "wrong" way points at under-registration rather than lower mortality.
+gm_tab <- surv_unit[age == 0L] |>
+  merge(as.data.table(readRDS(paste0(g, "index_grouped_mun.RDS")))[, .(group_id, year, GM)] |> unique(),
+        by = c("group_id", "year")) |>
+  _[, .(infant_deaths_per_1000 = 1000 * sum(deaths) / sum(population),
+        mean_unit_rr = mean(rr), units = .N), by = .(year, GM)][order(year, GM)]
+fwrite(gm_tab, file.path(fig_dir, "ch5_011_infant_mortality_by_gm.csv"))
+cat("ch5_011: survival inputs written; infant mortality by GM:\n")
+print(gm_tab[year %in% c(2010, 2015, 2020)])

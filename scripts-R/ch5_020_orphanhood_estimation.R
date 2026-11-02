@@ -28,487 +28,64 @@ source("R/marginalization.R")
 fig_dir <- marg_fig_dir("output/ch5")  # output/ch5_fw when ORPHAN_MARG=fw
 
 # =============================================================================
-#  1.  Read data
+#  1-11. Orphanhood engine (R/orphanhood.R; thesis §5.3, Eqs 7-19)
 # =============================================================================
-
+# Departures from the thesis text, agreed 2026-10-30:
+#   * parent ages bound the age AT BIRTH (mothers 15-50, fathers 15-79); a
+#     dying parent can be older (mothers to 64, the oldest band with deaths;
+#     fathers to 79). Thesis §5: "women 15-49, men 15-79".
+#   * Eq (10) uses cumulative cohort survival to the end of age c, not the
+#     one-year period survival of the birth year.
+#   * O_prev is the exact year-by-year sum, not Eq (16)'s (c-1) * h1.
+#   * child survival is the national curve (ORPHAN_SURV=national, default) or
+#     the per-unit empirical-Bayes curve (ORPHAN_SURV=unit); see ch5_011.
+source("R/orphanhood.R")
 g <- "input-data-processed/"
+surv_source <- Sys.getenv("ORPHAN_SURV", "national")
+stopifnot(surv_source %in% c("national", "unit"))
 
-geo_info      <- readRDS(paste0(g, "geo_info_mun.RDS"))
-# geo_info has no group_id — attach it from the ch2 grouping so original-mun
-# joins below (e.g. deaths_raw) can map mun -> group_id.
+geo_info <- readRDS(paste0(g, "geo_info_mun.RDS"))
+# geo_info has no group_id: attach it from the ch2 grouping (used by the maps).
 geo_info <- dplyr::left_join(
   geo_info,
   sf::st_drop_geometry(readRDS(paste0(g, "grouped_municipality_50000.RDS"))) |>
     dplyr::select(mun, group_id),
   by = "mun")
 population_df <- readRDS(paste0(g, "population_grouped_mun.RDS"))
-deaths_raw    <- readRDS(paste0(g, "deaths.RDS"))
-mort_df       <- readRDS(paste0(g, "mort_df.RDS"))
-fertility_df <- readRDS(paste0(g, "births_long.RDS"))
-
-# =============================================================================
-#  2.  Parent population long
-# =============================================================================
-
-population_df_long <- population_df |>
-  mutate(
-    age_band  = str_replace_all(age, "[^0-9]+", "-"), 
-    age_start = as.numeric(str_extract(age_band, "^\\d+")),
-    age_end   = as.numeric(str_extract(age_band, "\\d+$"))
-  )|>
-  filter(age_end >= 15) |>
-  rowwise() |>
-  mutate(age = list(seq(age_start, age_end))) |>
-  ungroup() |>
-  unnest(age) |> 
-  filter(age >= 15) |>
-  mutate(
-    population = round(population / (age_end - age_start + 1))
-  ) |>
-  select(group_id, year, sex, age, population) %>% 
-  arrange(group_id, year, sex, age) %>% 
-  filter(
-    (sex == "female" & age <= 50) |
-    (sex == "male"   & age <= 60)
-  )
-
-# =============================================================================
-#  3.  Fertility – births / parent_pop in same band
-# =============================================================================
-
-fertility_df <- fertility_df |>   # births_long already at group_id level (ch5_010)
-  group_by(group_id, year, sex, age) |>
-  summarise(births = sum(births), .groups = "drop") |>
-  filter(age < 80) |>
-  left_join(population_df_long, by=c("group_id", "sex", "age", "year")) |>
-  mutate(fertility_rate = births/population) |>
-  drop_na()
-
-
-## --- TEST THE CORRECTNESS OF THE DATA ----------------------------------------
-fr_plot <- fertility_df %>%                        
-  group_by(age, sex) %>%
-  summarise(
-    mean_fr = weighted.mean(fertility_rate, w = population, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-p_fert_rate_check <- ggplot(fr_plot, aes(age, mean_fr, colour = sex, group = sex)) +
-  geom_line(linewidth = 1.2) + geom_point() +
-  scale_x_discrete(guide = guide_axis(angle = 90)) +
-  labs(title = "Population-weighted fertility rate by parent age band (1990-2023)",
-       y = "Births per adult", x = "Parent age band")
-ggsave(file.path(fig_dir, "ch5_020_fert_rate_check.pdf"), p_fert_rate_check, width = 8, height = 6)
-
-
-# =============================================================================
-#  4.  Child survival probabilities (0–17, single age)
-# =============================================================================
-
-population_children <- population_df %>%
-  mutate(age_start = as.numeric(str_extract(age, "^\\d+")),
-         age_end   = as.numeric(str_extract(age, "\\d+$"))) %>%
-  rowwise() %>% mutate(age = list(seq(age_start, age_end))) %>%
-  ungroup() %>% unnest(age) %>%
-  filter(age <= 17) %>%
-  mutate(population = round(population / (age_end - age_start + 1))) %>%
-  select(group_id, year, sex, age, population)
-
-# Child survival: empirical, POOLED NATIONAL single-year schedule from ch5_011
-# (extracted from the raw EDR microdata). Per-group child deaths are too sparse to
-# use directly — see the CV-vs-population diagnostics in ch5_011 — so the national
-# year × age survival curve (sexes averaged) is broadcast to every grouped unit.
-survival_df <- readRDS(paste0(g, "child_survival.RDS")) |>   # year, sex, age, survival_prob
-  group_by(year, age) |>
-  summarise(survival_prob = mean(survival_prob, na.rm = TRUE), .groups = "drop")
-survival_df <- tidyr::crossing(group_id = unique(population_df$group_id), survival_df) |>
-  dplyr::select(group_id, year, age, survival_prob)
-
-# =============================================================================
-#  5.  Expected ration of actual children per parent  (C_df)
-# =============================================================================
-saveRDS(fertility_df, "input-data-processed/fertility_df.RDS")
-saveRDS(survival_df, "input-data-processed/survival_df.RDS")
-
-fertility_df <- readRDS("input-data-processed/fertility_df.RDS")
-survival_df <- readRDS("input-data-processed/survival_df.RDS")
-
-library(data.table)
-
-# --- Step 0: Ensure correct types ---
-setDT(fertility_df)
-setDT(survival_df)
-
-fertility_df[, `:=`(
-  year = as.integer(year),
-  age = as.integer(age)
-)]
-
-survival_df[, `:=`(
-  year = as.integer(year),
-  age = as.integer(age)
-)]
-
-# --- Step 1: Expand across child ages 0–17 ---
-C_band_dt <- fertility_df[
-  , .(child_age = 0:17),
-  by = .(year, age, sex, group_id, fertility_rate, population)
-][
-  , `:=`(
-    birth_year          = year - child_age,
-    survival_age        = child_age + 1,
-    parent_age_at_birth = age - child_age,
-    parent_pop_curr     = population
-  )
-][
-  # keep only biologically valid parents *AND* birth-years
-  parent_age_at_birth >= 15 &              # as before
-    birth_year >= 1990 & birth_year <= 2023  # where fertility data exist
-]
-
-
-# --- Step 2: Join fertility rate for birth_year & parent's age at birth ---
-fertility_lookup <- fertility_df[
-  , .(birth_year = year, parent_age_at_birth = age, sex, group_id, fertility_rate)
-]
-
-# Use data.table join syntax to update column safely
-C_band_dt[
-  fertility_lookup,
-  on = .(birth_year, parent_age_at_birth, sex, group_id),
-  fertility_rate := i.fertility_rate
-]
-
-# --- Step 3: Join survival probability ---
-# Prepare survival_df keys
-survival_df[
-  , `:=`(
-    birth_year = year,
-    survival_age = age
-  )
-]
-
-# Filter to only valid (birth_year, survival_age) combos in survival_df
-valid_survival_keys <- unique(survival_df[, .(group_id, birth_year, survival_age)])
-C_band_dt <- C_band_dt[
-  valid_survival_keys, 
-  on = .(group_id, birth_year, survival_age), 
-  nomatch = 0
-]
-
-# Join survival probabilities
-C_band_dt[
-  survival_df, 
-  on = .(group_id, birth_year, survival_age), 
-  survival_prob := i.survival_prob
-]
-
-# --- Step 4: Calculate expected surviving children ---
-C_band_dt[
-  , expected_children_raw := fertility_rate * survival_prob
-]
-
-# Define your banding function
-to_band <- function(a) {
-  if (is.na(a) || a < 15 || a >= 80) return(NA_character_)
-  lo <- floor(a / 5) * 5
-  hi <- lo + 4
-  sprintf("%02d-%02d", lo, hi)
-}
-
-# Vectorize it for efficiency
-to_band_vec <- Vectorize(to_band)
-
-# Apply banding to parent age
-C_band_dt[, parent_age_band := to_band_vec(parent_age_at_birth)]
-
-# Drop rows where banding failed (e.g. age < 15 or >= 80)
-C_band_dt <- C_band_dt[!is.na(parent_age_band)]
-
-# Simple arithmetic mean by band  
-band_summary <- C_band_dt[
-  , .(
-    expected_children = mean(expected_children_raw, na.rm = TRUE)
-  ),
-  by = .(year, sex, group_id, parent_age_band, child_age)
-]
-
-
-# =============================================================================
-#  6.  Parental deaths (≤79)
-# =============================================================================
-
-deaths_df <- deaths_raw %>%
-  filter(year >= 1990) %>%
-  left_join(geo_info %>% select(mun, group_id), by = "mun") %>%
-  group_by(group_id, year, sex, age) %>%
-  summarise(deaths = sum(deaths), .groups = "drop") %>%
-  mutate(upper = as.numeric(str_extract(age, "\\d+$"))) %>%
-  filter(upper > 15, upper <= 60) %>%
-  rename(parent_band = age)
-
-# =============================================================================
-#  7.  Unadjusted orphan events (O_death)
-# =============================================================================
-
-O_death_df <- band_summary %>%
-  inner_join(deaths_df, by = c("year", "parent_age_band" = "parent_band", "sex", "group_id")) %>%
-  mutate(O_death = expected_children * deaths)
-
-# =============================================================================
-#  8.  Adult 5‑year hazard (≤79) – population‑weighted
-# =============================================================================
-
-deaths_single <- readRDS(paste0(g, "deaths_df_long.RDS")) %>%   # already group_id-level
-  filter(age < 80)
-
-deaths_single <- deaths_single %>%
-  group_by(group_id, year, sex, age) %>%
-  summarise(deaths = sum(deaths), .groups = "drop")
-
-population_single <- population_df %>%
-  mutate(age_start = as.numeric(str_extract(age, "^\\d+")),
-         age_end   = as.numeric(str_extract(age, "\\d+$"))) %>%
-  rowwise() %>% mutate(age = list(seq(age_start, age_end))) %>%
-  ungroup() %>% unnest(age) %>%
-  filter(age < 80) %>%
-  mutate(population = round(population / (age_end - age_start + 1))) %>%
-  select(group_id, year, sex, age, population)
-
-mortality_df <- deaths_single %>%
-  left_join(population_single, by = c("group_id", "year", "sex", "age"))
-
-hazard5yr_df <- mortality_df %>%
-  mutate(mx = deaths / population,
-         hazard_5yr = 1 - exp(-5 * mx)) %>%
-  select(group_id, year, sex, age, hazard_5yr)
-
-to_band <- function(a) {
-  # vectorised with ifelse(), works for scalars or whole columns
-  ifelse(is.na(a) | a < 15 | a >= 80,
-         NA_character_,
-         sprintf("%02d-%02d",
-                 floor(a/5) * 5,
-                 floor(a/5) * 5 + 4))
-}
-
-haz_weighted <- hazard5yr_df %>%
-  left_join(population_single, by = c("group_id", "year", "sex", "age")) %>%
-  mutate(band = to_band(age)) %>%
-  filter(!is.na(band)) %>%
-  group_by(group_id, year, sex, band) %>%
-  summarise(hazard_band = weighted.mean(hazard_5yr, w = population, na.rm = TRUE),
-            .groups = "drop") %>%
-  rename(age = band)
-
-# =============================================================================
-# 9.  Double‑orphan (O_double) and prior‑orphan (O_prev)
-# =============================================================================
-
-O_death_dt <- as.data.table(O_death_df)
-setDT(haz_weighted)
-haz_weighted <- as.data.table(haz_weighted)
-
-O_death_dt[, opposite_sex := ifelse(sex == "male", "female", "male")]
-
-haz_weighted <- unique(haz_weighted,
-                       by = c("group_id", "year", "age", "sex"))
-
-setkey(haz_weighted, group_id, year, age, sex)
-setkey(O_death_dt,  group_id, year, parent_age_band, opposite_sex)
-
-O_death_dt <- O_death_dt[              #  ❰ X ❱  (kept)
-  haz_weighted,                        #  ❰ i ❱  (adds hazard)
-  on = .(group_id,
-         year,
-         parent_age_band = age,
-         opposite_sex   = sex),
-  nomatch = 0
-]
-
-# rename and tidy
-setnames(O_death_dt, "hazard_band", "hazard_opp")
-
-
-
-## set missing hazards to zero
-O_death_dt[is.na(hazard_opp), hazard_opp := 0]
-
-## double-orphan term
-O_death_dt[, O_double := hazard_opp * expected_children * deaths]
-
-# =============================================================================
-# =============================================================================
-# =============================================================================
-# =============================================================================
-
-library(data.table)
-
-# ------------------------------------------------------------------
-#  (6)  Prior-orphan term  O_prev  – exact year-by-year accumulation
-# ------------------------------------------------------------------
-O_death_dt[, row_id := .I]                              # unique key
-
-# ------------------------------------------------------------------
-#  Add midpoint of the parent 5-year band  (e.g. "30-34" → 32)
-# ------------------------------------------------------------------
-O_death_dt[, midpoint_age :=
-             as.numeric(sub("^(\\d+)-.*$", "\\1", parent_age_band)) + 2]
-
-setDT(hazard5yr_df)
-hazard5yr_df[, hazard_1yr := 1 - (1 - hazard_5yr)^(1/5)]   # ← moved up
-
-prev_expanded <- O_death_dt[child_age > 1, .(
-  i = seq_len(child_age - 1)
-), by = .(row_id, group_id, year, midpoint_age,
-          opp_sex = opposite_sex, expected_children, deaths)]
-
-prev_expanded[, `:=`(
-  target_year = year - i,
-  target_age  = midpoint_age - i
-)]
-
-setkey(hazard5yr_df, group_id, year, age, sex)
-prev_expanded <- hazard5yr_df[
-  prev_expanded,
-  on = .(group_id,
-         year = target_year,
-         age  = target_age,
-         sex  = opp_sex)
-]
-
-prev_expanded[is.na(hazard_1yr), hazard_1yr := 0]
-
-prev_expanded[, contrib := hazard_1yr * expected_children * deaths]
-
-## sum across all earlier years and add back
-prior_sums   <- prev_expanded[, .(O_prev = sum(contrib)), by = row_id]
-O_death_dt   <- prior_sums[O_death_dt, on = .(row_id)]
-O_death_dt[is.na(O_prev), O_prev := 0]
-
-
-# ------------------------------------------------------------------
-#  (7)  New orphan events  O_new
-# ------------------------------------------------------------------
-O_new_dt <- O_death_dt[
-  , .(
-    O_death  = sum(expected_children * deaths),   # mothers + fathers
-    O_double = sum(O_double),                     # both parents same year
-    O_prev   = sum(O_prev)                        # other parent earlier
-  ),
-  by = .(group_id, year, child_age, parent_age_band)
-][
-  , O_new := O_death - 0.5 * O_double - O_prev][]   # formulas 7a–7c
-
-# You may collapse parent_age_band now if you only need child_age totals
-O_new_tot <- O_new_dt[, .(O_new = sum(O_new)), by = .(group_id, year, child_age)]
-
-# ------------------------------------------------------------------
-#  (9)  Sex-specific incidence  (needed only if you care about mothers vs fathers)
-#       O_new_sex  =  O_death_parent – O_prev_parent
-# ------------------------------------------------------------------
-O_new_sex <- O_death_dt[
-  , .(
-    O_new_sex = sum(expected_children * deaths - O_prev)
-  ),
-  by = .(group_id, year, sex, child_age)
-]
-
-
-# ------------------------------------------------------------------
-#  Helper: national child-survival lookup  (1 – 1h) in equation 8
-# ------------------------------------------------------------------
-library(data.table)
-
-## make sure both tables are data.tables
-setDT(survival_df)
-setDT(population_children)   # you created this earlier
-
-## bring children’s population onto every (group_id, year, age) row
-child_surv <- merge(
-  survival_df,                                           # LHS
-  population_children[, .(group_id, year, age, population)],  # RHS
-  by = c("group_id", "year", "age"),
-  all.x = TRUE
-)[
-  , .(surv = weighted.mean(survival_prob,
-                           w = population,
-                           na.rm = TRUE)),
-  by = .(year, age)
-]
-
-setkey(child_surv, year, age)
-
-# ------------------------------------------------------------------
-#  (8)  Lifetime prevalence by single age 0–17   O_lifetime_age
-# ------------------------------------------------------------------
-O_new_nat <- O_new_tot[, .(O_new = sum(O_new)), by = .(year, child_age)]
-setkey(O_new_nat, year, child_age)
-
-years <- sort(unique(O_new_nat$year))
-
-O_lifetime <- O_new_nat[
-  , {
-    y  <- year
-    b  <- child_age
-    S  <- 1          # survival product
-    prev <- 0
-    for (i in 0:b) {
-      yy <- y - i
-      bb <- b - i
-      onew <- O_new_nat[.(yy, bb), O_new, nomatch = 0]
-      if (!is.na(onew)) {
-        prev <- prev + S * onew
-      }
-      # update survival product for next loop (skip i == b)
-      if (i < b) {
-        s_j <- child_surv[.(yy, bb), surv, nomatch = 0]
-        S   <- S * ifelse(is.na(s_j), 1, s_j)
-      }
-    }
-    .(Olifetime = prev)
-  },
-  by = .(year, child_age)
-]
-
-# ------------------------------------------------------------------
-# (10)  Lifetime prevalence by parent sex (optional)
-# ------------------------------------------------------------------
-O_new_sex_nat <- O_new_sex[, .(O_new = sum(O_new_sex)),
-                           by = .(year, sex, child_age)]
-setkey(O_new_sex_nat, year, sex, child_age)
-
-O_lifetime_sex <- O_new_sex_nat[
-  , {
-    y  <- year
-    b  <- child_age
-    s  <- sex
-    S  <- 1
-    prev <- 0
-    for (i in 0:b) {
-      yy <- y - i; bb <- b - i
-      onew <- O_new_sex_nat[.(yy, s, bb), O_new, nomatch = 0]
-      if (!is.na(onew)) prev <- prev + S * onew
-      if (i < b) {
-        s_j <- child_surv[.(yy, bb), surv, nomatch = 0]
-        S   <- S * ifelse(is.na(s_j), 1, s_j)
-      }
-    }
-    .(Olifetime = prev)
-  },
-  by = .(year, sex, child_age)
-]
-
-# ------------------------------------------------------------------
-# (11)  Lifetime prevalence aggregated over child ages 0–17
-# ------------------------------------------------------------------
-O_lifetime_total <- O_lifetime[, .(Olifetime = sum(Olifetime)),
-                               by = year][order(year)]
-
-# The data.tables O_new_tot, O_lifetime, O_lifetime_sex, O_lifetime_total
-# correspond to formulas (7), (8), (10) and (11) respectively.
+pop1 <- single_year_population(population_df)
+
+fert <- fertility_rates(readRDS(paste0(g, "births_grouped_mun.RDS")), pop1)  # Eq (7)
+s1   <- readRDS(paste0(g, sprintf("child_survival_%s.RDS", surv_source)))    # Eqs (8)-(9)
+S    <- cohort_survival(s1)                                                  # Eq (10)
+C    <- expected_children(fert, S, pop1)                                     # Eqs (10)-(11)
+D    <- parental_deaths(readRDS(paste0(g, "deaths_grouped_mun.RDS")))        # §5.3.5
+hz   <- adult_hazards(D, population_df)                                      # Eqs (13), (15)
+ev   <- orphan_events(C, D, hz)                                              # Eqs (12)-(17)
+prev_unit <- prevalence(ev, s1, by = "sex")                                  # Eqs (18)-(19)
+
+saveRDS(ev[, .(O_death = sum(O_death), O_double = sum(O_double), O_prev = sum(O_prev),
+               O_prev_eq16 = sum(O_prev_eq16), O_new = sum(O_new)),
+           by = .(group_id, year, sex, child_age)],
+        paste0(g, sprintf("orphan_incidence_%s.RDS", surv_source)))
+saveRDS(prev_unit, paste0(g, sprintf("orphan_prevalence_%s.RDS", surv_source)))
+
+# Objects used by the figures below. Years before 2007 lack children born
+# before 1990 (no fertility data), so they undercount the oldest ages.
+INCOMPLETE_NOTE <- "2005-2006: children aged 16-17 not covered (births before 1990 not in the data)."
+fertility_df <- as.data.frame(fert[, .(group_id, year, sex, age, births, population,
+                                       fertility_rate = fert_rate)])
+saveRDS(fertility_df, "input-data-processed/fertility_df.RDS")   # read by ch5_030
+population_df_long <- as.data.frame(pop1[ages_table(ORPHAN_FERT_AGES), on = .(sex, age), nomatch = 0])
+population_children <- pop1[age <= 17]
+O_death_dt <- ev
+O_new_tot  <- ev[, .(O_new = sum(O_new)), by = .(group_id, year, child_age)]
+O_new_sex  <- ev[, .(O_new_sex = sum(O_new)), by = .(group_id, year, sex, child_age)]
+O_lifetime       <- prev_unit[, .(Olifetime = sum(O_life)), by = .(year, child_age)]
+O_lifetime_sex   <- prev_unit[, .(Olifetime = sum(O_life)), by = .(year, sex, child_age)]
+O_lifetime_total <- prev_unit[, .(Olifetime = sum(O_life)), by = year][order(year)]
 
 O_new_tot        <- O_new_tot[year >= 2005]
+O_new_sex        <- O_new_sex[year >= 2005]
 O_lifetime       <- O_lifetime[year >= 2005]
 O_lifetime_sex   <- O_lifetime_sex[year >= 2005]
 O_lifetime_total <- O_lifetime_total[year >= 2005]
@@ -525,7 +102,7 @@ library(patchwork)
 p_incidence <- ggplot(O_new_tot, aes(year, O_new)) +
   geom_col(fill = "#0072B2", width = 0.6) +
   scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) +
-  labs(title = "Incidence of Orphanhood (new cases)",
+  labs(caption = INCOMPLETE_NOTE, title = "Incidence of Orphanhood (new cases)",
        y = "New orphans", x = NULL) +
   theme_minimal()
 
@@ -543,7 +120,7 @@ p_incidence_line <- ggplot(inc_plot, aes(year, incidence)) +
     limits = c(50000, NA),                                   # ← starts at 0
     labels  = label_number(scale_cut = cut_short_scale())
   ) +
-  labs(title = "Incidence of Orphanhood (new cases)",
+  labs(caption = INCOMPLETE_NOTE, title = "Incidence of Orphanhood (new cases)",
        y = "New orphans", x = NULL) +
   theme_minimal()
 ggsave(file.path(fig_dir, "ch5_020_incidence_line.pdf"), p_incidence_line, width = 8, height = 6)
@@ -678,7 +255,7 @@ p_incidence_rate_sex <- ggplot(rate_df, aes(year, rate_per_100, colour = sex, gr
     expand = expansion(mult = c(0, 0.05))
   ) +
   labs(
-    title = "Incidence Rate of Orphanhood by Parent Sex",
+    caption = INCOMPLETE_NOTE, title = "Incidence Rate of Orphanhood by Parent Sex",
     y     = "New orphans per 100 children",
     x     = NULL
   ) +
@@ -768,8 +345,13 @@ map_data_rate <- O_new_tot |>
 # ── 2  Plot the rate ─────────────────────────────────────────────────
 rate_map <- ggplot(map_data_rate) +
   geom_sf(aes(fill = orphan_rate), colour = "white", linewidth = 0.1) +
-  scale_fill_gradientn(
-    colours  = c("#126a38", "#ffff8c", "#b2182b"),   # low → high
+  # Yellow at the median, as on the other maps: a few very high units would
+  # otherwise put yellow far above the typical unit.
+  scale_fill_gradient2(
+    low      = "#126a38",
+    mid      = "#ffff8c",
+    high     = "#b2182b",
+    midpoint = median(map_data_rate$orphan_rate, na.rm = TRUE),
     na.value = "grey90",
     name     = "Orphans per 1 000 children",
     guide    = guide_colorbar(
@@ -814,16 +396,17 @@ mpi <- mpi |>
 mpi <- sf::st_as_sf(mpi)
 
 map_mpi <- ggplot(mpi) +
-  geom_sf(aes(fill = IMN), colour = "white", linewidth = 0.1) +
-  
-  # ── red → yellow → green scale ───────────────────────────────
+  # IMN runs backwards (higher = LESS marginalized). Plot the deprivation
+  # score 100 * (1 - IMN) instead, so high = more marginalized = red (Oliver's
+  # note on Fig 18); yellow at the median rather than a fixed midpoint.
+  geom_sf(aes(fill = 100 * (1 - IMN)), colour = "white", linewidth = 0.1) +
   scale_fill_gradient2(
-    low       = "#b2182b",         
-    mid       = "#ffff8c",          
-    high      = "#126a38",          
-    midpoint  = 0.85,  # centre the yellow
+    low       = "#126a38",
+    mid       = "#ffff8c",
+    high      = "#b2182b",
+    midpoint  = median(100 * (1 - mpi$IMN), na.rm = TRUE),
     na.value  = "grey90",
-    name      = "MPI",
+    name      = "Marginalization\n100 x (1 - IMN)",
     guide     = guide_colorbar(
       barheight     = unit(4, "cm"),
       barwidth      = unit(1, "cm"),
@@ -834,8 +417,8 @@ map_mpi <- ggplot(mpi) +
   # ─────────────────────────────────────────────────────────────
   
   labs(
-    title    = "Poverty Index",
-    subtitle = "Value of IMN",
+    title    = "Marginalization (2020)",
+    subtitle = "Higher = more marginalized",
     fill     = "MPI"
   ) +
   theme_minimal() +
@@ -855,7 +438,7 @@ ggsave(file.path(fig_dir, "ch5_020_mpi_map.pdf"), map_mpi, width = 8, height = 7
 # ──────────────────────────────────────────────────────────────
 fert_df_year <- fertility_df |>
   rename(fert_rate = fertility_rate) |>
-  filter(year>= 2010)
+  filter(year>= 2007)   # 2007 onwards for the period-mean Fig 18
 
 geo_info_grouped_mun <- readRDS("input-data-processed/geo_info_grouped_mun.RDS")
 geo_info_grouped_mun <- st_drop_geometry(geo_info_grouped_mun)
@@ -874,6 +457,7 @@ std_raw_year <- std_raw %>%
   )
 
 std_raw_year <- std_raw |>
+  filter(year >= 2010) |>
   group_by(year, sex) |>
   summarise(fertility_rate = mean(std_fert_rate), .groups = "drop")
   
@@ -928,9 +512,9 @@ fert_map <- std_raw_map |>
 fert_map <- ggplot(fert_map) +
   geom_sf(aes(fill = fertility_rate), colour = "white", linewidth = 0.1) +
   scale_fill_gradient2(
-    low       = "#b2182b",          # deep red   (low MPI)
-    mid       = "#ffff8c",          # bright yellow (mid)
-    high      = "#126a38",        # rich green (high MPI)
+    low       = "#126a38",          # high = red (Oliver's note on Fig 18)
+    mid       = "#ffff8c",
+    high      = "#b2182b",
     midpoint  = mean(fert_map$fertility_rate, na.rm = TRUE),  # centre the yellow
     na.value  = "grey90",
     name      = "Standardized fertility rate",
@@ -965,7 +549,7 @@ deaths <- deaths[!deaths$age %in% to_exclude, ]
 # deaths_grouped_mun has one row per registration year; collapse_year_reg()
 # sums deaths over them and keeps the cell's population once.
 mort_df_year <- deaths |>
-  filter(year>= 2010, !is.na(age)) |>
+  filter(year>= 2007, !is.na(age)) |>   # 2007 onwards for the period-mean Fig 18
   select(group_id, year, sex, age, tot_deaths) |>
   left_join(population_df, by = c("group_id", "year", "sex", "age")) |>
   collapse_year_reg("tot_deaths") |>
@@ -984,6 +568,7 @@ std_raw_mort_year <- std_raw_mort %>%
   )
 
 std_raw_mort_year <- std_raw_mort_year |>
+  filter(year >= 2010) |>
   group_by(year, sex) |>
   summarise(mortality_rate = mean(std_mort_rate), .groups = "drop")
 
@@ -1065,9 +650,126 @@ mort_map <- ggplot(mort_map) +
 
 print(mort_map)
 ggsave(file.path(fig_dir, "ch5_020_std_mort_map.pdf"), mort_map, width = 8, height = 7)
-map_mpi | inc_map
-(map_mpi | inc_map) / (fert_map | mort_map)
-(map_mpi | rate_map) / (fert_map | mort_map)
+# Thesis Figure 18: poverty index | orphanhood rate / std fertility | std mortality
+# Three versions: 2023, 2010, and the mean over 2007-2023 (the years covering all
+# child ages). Marginalization is only available for 2010-2020. Each panel keeps
+# one colour scale across the versions, so they can be compared: yellow at the
+# median, limits at the 1st/99th percentiles of the values shown.
+red_high <- c("#126a38", "#ffff8c", "#b2182b")
+fig18_data <- list(
+  mpi = readRDS(marg_file("index_grouped_mun")) |>
+    transmute(group_id, year, value = 100 * (1 - IMN)),
+  orphan = O_new_tot |>
+    group_by(group_id, year) |>
+    summarise(O = sum(O_new), .groups = "drop") |>
+    left_join(population_children |>
+                group_by(group_id, year) |>
+                summarise(n_children = sum(population), .groups = "drop"),
+              by = c("group_id", "year")) |>
+    mutate(value = 1000 * O / n_children),
+  fert = std_raw |>
+    group_by(group_id, year) |>
+    summarise(value = mean(std_fert_rate), .groups = "drop"),
+  mort = std_raw_mort |>
+    group_by(group_id, year) |>
+    summarise(value = mean(std_mort_rate), .groups = "drop"),
+  # Mortality at parenting ages: one rate for men and women, ages 25-54 (where
+  # about 89% of children's fathers and 87% of their mothers are), standardised
+  # to the national 2020 age and sex mix. Unit-level fertility plays no part.
+  parent_mort = compute_std_mort_rate(
+    filter(mort_df_year, age %in% c("25-29", "30-34", "35-39", "40-44", "45-49", "50-54")),
+    std_pop = std_ref_population(population_df), by_sex = FALSE) |>
+    transmute(group_id, year, value = 1000 * std_mort_rate),
+  # Full-span mortality directly standardised to the parents of children: each
+  # sex x band weighted by its national share of children (2007-2023), the same
+  # weights in every unit. Summed over mothers and fathers, so it reads as parent
+  # deaths per 1 000 children if every unit had the national parental age mix.
+  child_mort = {
+    b <- C[, .(C_band = sum(C), N = parents[1]), by = .(group_id, year, sex, band)]
+    wt <- b[year %in% 2007:2023, .(W = sum(C_band * N)), by = .(sex, band)]
+    wt[, W := W / sum(W), by = sex]
+    b <- D[, .(group_id, year, sex, band, deaths)][b, on = .(group_id, year, sex, band)]
+    b[is.na(deaths), deaths := 0]
+    wt[b, on = .(sex, band)][, .(value = 1000 * sum(W * deaths / N)), by = .(group_id, year)]
+  }
+)
+fig18_data <- lapply(fig18_data, \(d) mutate(d, year = as.integer(as.character(year))))
+
+fig18_versions <- list(
+  list(file = "ch5_020_fig18_comparison.pdf",      years = 2023L,    mpi_years = 2020L,
+       label = "2023",           mpi_label = "2020"),
+  list(file = "ch5_020_fig18_comparison_2010.pdf", years = 2010L,    mpi_years = 2010L,
+       label = "2010",           mpi_label = "2010"),
+  list(file = "ch5_020_fig18_comparison_mean.pdf", years = 2007:2023, mpi_years = 2010:2020,
+       label = "mean 2007-2023", mpi_label = "mean 2010-2020")
+)
+for (v in seq_along(fig18_versions)) {
+  fig18_versions[[v]]$values <- Map(function(d, yrs) {
+    d |> filter(year %in% yrs) |>
+      group_by(group_id) |>
+      summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+  }, fig18_data, list(fig18_versions[[v]]$mpi_years, fig18_versions[[v]]$years,
+                      fig18_versions[[v]]$years, fig18_versions[[v]]$years,
+                      fig18_versions[[v]]$years, fig18_versions[[v]]$years))
+}
+fig18_scale <- lapply(names(fig18_data), function(p) {
+  x <- unlist(lapply(fig18_versions, \(v) v$values[[p]]$value))
+  list(limits = unname(quantile(x, c(0.01, 0.99), na.rm = TRUE)), midpoint = median(x, na.rm = TRUE))
+})
+names(fig18_scale) <- names(fig18_data)
+
+fig18_map <- function(df, scale, title, name, colours = red_high) {
+  ggplot(left_join(select(aggregated_muni, group_id, geometry), df, by = "group_id")) +
+    geom_sf(aes(fill = value), colour = "white", linewidth = 0.1) +
+    scale_fill_gradient2(
+      low = colours[1], mid = colours[2], high = colours[3],
+      midpoint = scale$midpoint, limits = scale$limits, oob = scales::squish,
+      na.value = "grey90", name = name,
+      guide = guide_colorbar(barheight = unit(4, "cm"), barwidth = unit(1, "cm"),
+                             title.position = "top", title.hjust = 0.5)
+    ) +
+    labs(title = title) +
+    theme_minimal() +
+    theme(legend.position = "right",
+          legend.title = element_text(face = "bold"),
+          plot.title = element_text(face = "bold", size = 14))
+}
+
+for (v in fig18_versions) {
+  panels <- list(
+    fig18_map(v$values$mpi, fig18_scale$mpi,
+              sprintf("Marginalization (%s)", v$mpi_label),
+              "Marginalization\n100 x (1 - IMN)"),
+    fig18_map(v$values$orphan, fig18_scale$orphan,
+              sprintf("Orphanhood Rate by Municipality (%s)", v$label),
+              "Orphans per 1 000 children"),
+    fig18_map(v$values$fert, fig18_scale$fert,
+              sprintf("Standardized Fertility Rate (%s)", v$label),
+              "Standardized fertility rate"))
+  note <- plot_annotation(caption = paste(
+    "Each panel uses the same colours in the 2023, 2010 and period-mean versions:",
+    "yellow = median; values beyond the 1st/99th percentiles shown at the limit."))
+  mort <- fig18_map(v$values$mort, fig18_scale$mort,
+                    sprintf("Standardized Mortality Rate (%s)", v$label),
+                    "Standardized mortality rate")
+  parent_mort <- fig18_map(v$values$parent_mort, fig18_scale$parent_mort,
+                           sprintf("Standardized Mortality Rate, Ages 25-54 (%s)", v$label),
+                           "Deaths per 1 000\nadults aged 25-54")
+  fig18 <- (panels[[1]] | panels[[2]]) / (panels[[3]] | mort) + note
+  ggsave(file.path(fig_dir, v$file), fig18, width = 16, height = 14)
+  fig18 <- (panels[[1]] | panels[[2]]) / (panels[[3]] | parent_mort) + note
+  ggsave(file.path(fig_dir, sub("comparison", "parent_mort", v$file)), fig18, width = 16, height = 14)
+  child_mort <- fig18_map(v$values$child_mort, fig18_scale$child_mort,
+                          sprintf("Child-Weighted Parental Mortality (%s)", v$label),
+                          "Parent deaths per\n1 000 children")
+  fig18 <- (panels[[1]] | panels[[2]]) / (panels[[3]] | child_mort) + note
+  ggsave(file.path(fig_dir, sub("comparison", "child_mort", v$file)), fig18, width = 16, height = 14)
+  # The three candidates for the bottom-right panel, next to the orphanhood rate.
+  if (v$label == "mean 2007-2023") {
+    options_fig <- (panels[[2]] | mort) / (parent_mort | child_mort) + note
+    ggsave(file.path(fig_dir, "ch5_020_fig18_mortality_options.pdf"), options_fig, width = 16, height = 14)
+  }
+}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1098,27 +800,24 @@ orphans_by_year_sex <- O_lifetime_sex %>%
   summarise(total_orphans = sum(Olifetime, na.rm = TRUE), .groups = "drop")
 
 pop_children_year <- pop_children_year |>
-  filter(year >= 2007)
+  filter(year >= 2005)
 
 orphans_rate <- orphans_by_year_sex %>%
   left_join(pop_children_year, by = "year") %>%
   mutate(rate_per_100 = (total_orphans / children) * 100) |>
-  filter(year >= 2007)
+  filter(year >= 2005)
 
 
 p_prevalence_rate_sex <- ggplot(orphans_rate, aes(x = year, y = rate_per_100, color = sex)) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
-    title = "Orphanhood Prevalence Rate per 100 Children",
+    caption = INCOMPLETE_NOTE, title = "Orphanhood Prevalence Rate per 100 Children",
     x = "Year",
     y = "Rate per 100 Children",
     color = "Deceased Parent"
   ) +
-  scale_y_continuous(
-    limits = c(0, 3),       # Force y-axis to start at 0
-    expand = c(0, 0)         # Remove padding below axis
-  ) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
   theme_minimal()+
   theme(panel.border = element_rect(color = "black",
                                     fill = NA,
@@ -1159,7 +858,7 @@ orphan_rate_by_age <- orphans_by_year_age %>%
 
 orphan_rate_by_age <- orphan_rate_by_age %>%
   mutate(age_group = factor(age_group, levels = c("0-4", "5-9", "10-17")))|>
-  filter(year >= 2007)
+  filter(year >= 2005)
 
 p_prevalence_rate_age <- ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_100, color = age_group)) +
   geom_line(size = 1.2) +
@@ -1169,15 +868,12 @@ p_prevalence_rate_age <- ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_1
     name = "Age of child",
     labels = c("0–4 years", "5–9 years", "10–17 years"))+
   labs(
-    title = "Orphanhood Prevalence Rate per 100 Children by Age Group",
+    caption = INCOMPLETE_NOTE, title = "Orphanhood Prevalence Rate per 100 Children by Age Group",
     x = "Year",
     y = "Rate per 100 Children",
     color = "Age Group"
   )+
-  scale_y_continuous(
-    limits = c(0, 5),       # Force y-axis to start at 0
-    expand = c(0, 0)         # Remove padding below axis
-  ) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
   theme_minimal()+
   theme(panel.border = element_rect(color = "black",
                                     fill = NA,

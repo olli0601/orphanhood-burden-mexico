@@ -110,7 +110,8 @@ and §4.1.4 is not implemented at all.
 | 5.4 | — | `ch5_020:37-43` leaves `group_id = NA` unfiltered before `group_by(group_id, …)` | UNDOCUMENTED (spurious NA unit risk) |
 | 5.5 | Eq (8): child hazard "combining both sexes", location-specific | `ch5_011:210-215` computes survival **by sex**; `ch5_020:119-121` takes an **unweighted mean over sexes** (not the pooled ratio Eq (8) specifies) and broadcasts a **single national curve** to every group. §5.3.2 and §5.3.3 both index `S` by `g` | INCONSISTENT |
 | 5.6 | — | `ch5_011:96` uses an **inner join** to the grouping — municipalities absent from it are silently dropped from child mortality, uncounted | UNDOCUMENTED |
-| 5.7 | — | `ch5_011:91` de-duplicates overlapping archives with `max(deaths)`. Defensible but arbitrary and undocumented | UNDOCUMENTED |
+| 5.7 | — | `ch5_011` de-duplicated archives with `max(deaths)`, which also dropped late registrations of a year of occurrence (infant deaths 0.1–1.6% low from 2000). Fixed: one file per registration year (DBF and CSV agree exactly for 2012–2019), then sum | FIXED |
+| 5.7a | — | `ch5_011` lost nearly all child deaths for 1990–97 (two-digit `anio_ocur` failed `year >= 1990`) and 1999 (`DEFUN99.DBF`: extension check was case-sensitive), so survival was about 1 in those years. Fixed, with a payload check on infant deaths per year that also rejects the old cache. Effect: incidence −1.6% (2007), −1.0% (2010), −0.2% (2015), under 0.05% from 2017 | FIXED |
 | 5.8 | Eq (10): `C(a,c) = F(a−c) × S(c)` | `ch5_020:157` joins survival on `child_age + 1`, i.e. uses **`S(c+1)`, not `S(c)`** | INCONSISTENT |
 | 5.9 | Eq (10): `S(c)` is survival **from birth to age c** | The code multiplies by a **single one-year** survival probability (~0.998), not a cumulative product. At c = 17 the true factor is ~0.99 vs ~0.999 applied. The child-survival weighting is effectively inert — which is what makes Olli's "isn't this double accounting for child mortality?" answerable: no, because the first adjustment barely does anything | INCONSISTENT — substantive |
 | 5.10 | Eq (11): band aggregation is a **population-weighted** mean over single ages | `ch5_020:226-232` `expected_children = mean(...)` — **unweighted**. The `population` column is carried the whole way and never used as a weight | INCONSISTENT — headline |
@@ -127,6 +128,46 @@ and §4.1.4 is not implemented at all.
 | 5.21 | Fig 18 poverty panel | `ch5_020:817` fills by `IMN` with `low = red, high = green`, `midpoint = 0.85` hardcoded. IMN runs backwards, so red = least marginalized. Olli's "could you update the left column so high is red?" is about exactly this | UNDOCUMENTED |
 | 5.22 | §5.6 "how could we quantify this?" (Olli) | `ch5_020:1369` calls **`quit(save="no", status=0)`** — the entire Spearman / Moran's I / LISA block at `:1372-1490` is unconditionally unreachable. The quantification exists as code, has never run, and is absent from the thesis | UNDOCUMENTED + dead |
 | 5.23 | — | `ch5_020:1220-1222` hardcodes a **third** parent age range (15–49) for a correlation table that appears nowhere in the thesis | UNDOCUMENTED |
+
+**Chapter 5 status (2026-10-30).** The orphanhood calculation now lives in `R/orphanhood.R`
+and `ch5_020` calls it. Fixed: 5.1/5.2 (parent ages, see below), 5.4 (grouped death panel, no
+NA unit), 5.5 (sexes pooled as a ratio of sums), 5.8/5.9 (cumulative cohort survival), 5.10
+(population-weighted band mean), 5.11 (banded by current age), 5.12 (missing terms are 0),
+5.17 (O_new formed per sex, so the sexes add up to the total), 5.18 (prevalence per unit), 5.19
+(no hard y-limits; the `year >= 2007` filter is replaced by a caption), 5.20 (Fig 18 saved).
+5.21: the old map already showed red = more marginalized (low IMN); it now plots
+100·(1−IMN) so high = red, as Oliver asked. Open: 5.3 (2005–2006 are incomplete by
+construction: children 16–17 were born before 1990), 5.6 (needs a raw re-extraction to
+check), 5.22, 5.23 (exploratory dot-plot block, not in the thesis), 5.24–5.31 (bootstrap,
+deferred).
+
+New findings, fixed: (a) C was built only from (unit, year, age) rows with births in the
+current year, so parents with no current births (e.g. women over 50) had no children counted;
+(b) the opposite-sex hazard join dropped events instead of setting h = 0.
+
+What the fixes show:
+- Children per parent (2010, summed over child ages 0–17). Old code: women 15–19 had 1.47,
+  women 40–44 had 0.24. Now: peak 2.2 (women 35–39), 2.4 (men 35–39). Check: the sum over
+  parents of C·N over the child population is 0.94–1.05 across child ages 0–17 (2010).
+  Old code on the same check: 1.02 at age 0, rising to 1.31 (mothers) and 1.42 (fathers)
+  at most. Its total stayed near 1 because it put the right children on the
+  wrong parents, so this check is weak evidence on its own. It also dropped child age 17:
+  survival age c+1 = 18 has no row.
+- The 2023 check gives 0.71 at child age 0: recent births are under-registered. This is the
+  gap the Chapter 4 nowcast addresses.
+- Incidence rises from about 157k (old code, 2010) to 224k; paternal 0.41%, maternal 0.13%
+  per 100 children. The thesis reported 0.24–0.25% and about 0.05%. Parent-age choices move
+  totals by only 3–5%. The C(a,c) fixes account for the rest.
+- O_prev is 2.4–2.7% of O_death (Eq 16 gives 3.3–5.5%). The thesis says "<1%".
+- Child survival source: per-unit vs national changes national totals by −0.03% and unit
+  totals by at most ±2%. Registered infant mortality is lower in Very High GM units
+  (7.2 vs 9.2 per 1,000 in 2020), consistent with under-registration of infant deaths.
+
+Methods departures to state in the paper: parent ages bound the age at birth (mothers 15–50,
+fathers 15–79; a dying mother can be up to 64, a dying father up to 79); Eq (10) uses cumulative
+cohort survival; O_prev is the exact year-by-year sum, not Eq (16); child survival is the
+national curve (default) or per-unit (`ORPHAN_SURV=unit`); 4,178 parental deaths (0.04%) in
+municipalities missing from the grouping are dropped.
 
 ### Uncertainty (`ch5_030`)
 
