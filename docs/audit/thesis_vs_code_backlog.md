@@ -131,14 +131,15 @@ and §4.1.4 is not implemented at all.
 
 **Chapter 5 status (2026-10-30).** The orphanhood calculation now lives in `R/orphanhood.R`
 and `ch5_020` calls it. Fixed: 5.1/5.2 (parent ages, see below), 5.4 (grouped death panel, no
-NA unit), 5.5 (sexes pooled as a ratio of sums), 5.8/5.9 (cumulative cohort survival), 5.10
-(population-weighted band mean), 5.11 (banded by current age), 5.12 (missing terms are 0),
+NA unit), 5.5 (sexes pooled as a ratio of sums), 5.8/5.9 (cumulative cohort survival, to the
+end of age c since 2026-11-02, see below), 5.10 (population-weighted band mean), 5.11 (banded by current age), 5.12 (missing terms are 0),
 5.17 (O_new formed per sex, so the sexes add up to the total), 5.18 (prevalence per unit), 5.19
-(no hard y-limits; the `year >= 2007` filter is replaced by a caption), 5.20 (Fig 18 saved).
+(no hard y-limits; the 2007 cutoff now has a stated reason, see 5.3), 5.20 (Fig 18 saved).
 5.21: the old map already showed red = more marginalized (low IMN); it now plots
-100·(1−IMN) so high = red, as Oliver asked. Open: 5.3 (2005–2006 are incomplete by
-construction: children 16–17 were born before 1990), 5.6 (needs a raw re-extraction to
-check), 5.22, 5.23 (exploratory dot-plot block, not in the thesis), 5.24–5.31 (bootstrap,
+100·(1−IMN) so high = red, as Oliver asked. 5.3 fixed 2026-11-02: figures start at
+`ORPHAN_REPORT_FROM` (2007), the first year covering every child age, since children aged
+17 were born in 1990; 2005–2006 are dropped (the thesis figures start in 2005) and the RDS
+files keep all years. Open: 5.6 (needs a raw re-extraction to check), 5.22, 5.23 (exploratory dot-plot block, not in the thesis), 5.24–5.31 (bootstrap,
 deferred).
 
 New findings, fixed: (a) C was built only from (unit, year, age) rows with births in the
@@ -153,19 +154,29 @@ What the fixes show:
   at most. Its total stayed near 1 because it put the right children on the
   wrong parents, so this check is weak evidence on its own. It also dropped child age 17:
   survival age c+1 = 18 has no row.
-- The 2023 check gives 0.71 at child age 0: recent births are under-registered. This is the
-  gap the Chapter 4 nowcast addresses.
-- Incidence rises from about 157k (old code, 2010) to 224k; paternal 0.41%, maternal 0.13%
+- The child population in this check is CONAPO's five-year band ÷ 5, not births. The ratio
+  at child age 0 (mothers) is 1.01 / 0.89 / 0.70 for 2010 / 2019 / 2023. That is the product
+  of a split effect (age 0 against the band's five cohorts: 1.00 / 0.93 / 0.88) and a band
+  gap (expected children 0–4 over the `00-04` band: 1.01 / 0.96 / 0.81). Registration delay
+  is a small part of it: cohorts born around 2014 were about 93% registered by the end of
+  the following year, which would lift 2023 by about 0.05. The rest of the 2023 band gap
+  (never-registered births or a high CONAPO estimate) is not separated.
+- Incidence rises from about 157k (old code, 2010) to 222k; paternal 0.41%, maternal 0.13%
   per 100 children. The thesis reported 0.24–0.25% and about 0.05%. Parent-age choices move
   totals by only 3–5%. The C(a,c) fixes account for the rest.
-- O_prev is 2.4–2.7% of O_death (Eq 16 gives 3.3–5.5%). The thesis says "<1%".
-- Child survival source: per-unit vs national changes national totals by −0.03% and unit
-  totals by at most ±2%. Registered infant mortality is lower in Very High GM units
-  (7.2 vs 9.2 per 1,000 in 2020), consistent with under-registration of infant deaths.
+- O_prev is 2.3–2.7% of O_death in 2007–2023 (Eq 16 gives 3.2–5.7%). The thesis says "<1%".
+- Child survival source: per-unit vs national changes national totals by −0.04%. Unit totals
+  (2007–2023) stay within ±2% for 99.2% of units; the range is −5.2% to +1.3% (lowest: 15074).
+  Registered infant mortality is lower in Very High GM units (7.2 vs 9.2 per 1,000 in 2020),
+  consistent with under-registration of infant deaths.
+- End of age c (2026-11-02): S(t, c) = ∏_{j=0}^{c} s₁(t+j, j), so S(t, 0) is infant survival,
+  not 1. This follows Oliver's Nature Medicine definition. Compared with the start of age c,
+  incidence changes by −0.06% to −0.09% and prevalence by −0.11% to −0.18% (2010, 2019, 2023).
+  Child age 0 moves by about −1%; other ages by 0.1% or less.
 
 Methods departures to state in the paper: parent ages bound the age at birth (mothers 15–50,
 fathers 15–79; a dying mother can be up to 64, a dying father up to 79); Eq (10) uses cumulative
-cohort survival; O_prev is the exact year-by-year sum, not Eq (16); child survival is the
+cohort survival to the end of age c, where the thesis says "reach age c"; O_prev is the exact year-by-year sum, not Eq (16); child survival is the
 national curve (default) or per-unit (`ORPHAN_SURV=unit`); 4,178 parental deaths (0.04%) in
 municipalities missing from the grouping are dropped.
 

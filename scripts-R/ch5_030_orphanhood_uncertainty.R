@@ -298,8 +298,9 @@ plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
 ## --- helpers ---------------------------------------------------------------
 summarise_ui <- function(draws) {
-  rsx <- rbindlist(lapply(draws, `[[`, "rate_sex"))
-  rax <- rbindlist(lapply(draws, `[[`, "rate_age"))
+  # Years before 2007 lack children born before 1990 (ORPHAN_REPORT_FROM in R/orphanhood.R).
+  rsx <- rbindlist(lapply(draws, `[[`, "rate_sex"))[as.integer(as.character(year)) >= 2007L]
+  rax <- rbindlist(lapply(draws, `[[`, "rate_age"))[as.integer(as.character(year)) >= 2007L]
   ui_sex <- rsx[, .(
     med = median(rate_per_100, na.rm = TRUE),
     lwr = quantile(rate_per_100, 0.025, na.rm = TRUE),

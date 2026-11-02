@@ -17,6 +17,7 @@ ORPHAN_FERT_AGES   <- list(female = 15:50, male = 15:79)
 ORPHAN_PARENT_AGES <- list(female = 15:64, male = 15:79)
 ORPHAN_FIRST_YEAR  <- 1990L   # first year with fertility data
 ORPHAN_CHILD_AGES  <- 0:17
+ORPHAN_REPORT_FROM <- ORPHAN_FIRST_YEAR + max(ORPHAN_CHILD_AGES)   # 2007: first year with every child age
 
 band_lo <- function(band) as.integer(sub("^(\\d+)-.*$", "\\1", band))
 band_hi <- function(band) as.integer(sub("^.*-(\\d+)$", "\\1", band))

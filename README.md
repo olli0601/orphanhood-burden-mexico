@@ -1,6 +1,6 @@
 # Orphanhood Burden in Mexico
 
-Estimation of orphanhood incidence and prevalence in Mexico (2005–2023) from vital statistics, with delay-adjusted nowcasting of births and standardized adjustments for double and prior orphanhood. Based on Elsa Farinella's EPFL Master's thesis (2025), supervised by Oliver Ratmann (external) and Victor Panaretos (EPFL).
+Estimation of orphanhood incidence and prevalence in Mexico (2007–2023) from vital statistics, with delay-adjusted nowcasting of births and standardized adjustments for double and prior orphanhood. Based on Elsa Farinella's EPFL Master's thesis (2025), supervised by Oliver Ratmann (external) and Victor Panaretos (EPFL).
 
 ## Repository layout
 
@@ -150,9 +150,9 @@ scripts-R/ch5_030_orphanhood_uncertainty.R   # credible intervals (co-monotone P
 > yearly-rate CV is ~flat (~0.33) vs grouped-unit size — i.e. at ≥50k units the noise is
 > the real 1990–2023 decline, not small-N sampling — but single-age cells are sparse, so a
 > **pooled national, year-specific** single-year survival schedule is broadcast to all
-> units (per-group EB shrinkage is the natural refinement). The Fig-18 spatial four-panel
-> + Moran/LISA block in `ch5_020` is skipped pending a per-group merge of
-> orphan-rate / std-rate / poverty onto the geometry (flagged in-script).
+> units by default (`ORPHAN_SURV=unit` gives per-unit empirical-Bayes shrinkage). `ch5_020`
+> writes the Fig-18 panels; its Spearman + Moran/LISA block is skipped pending a per-group
+> merge of orphan-rate / std-rate / poverty onto the geometry (flagged in-script).
 
 ## Data
 

@@ -69,9 +69,8 @@ saveRDS(ev[, .(O_death = sum(O_death), O_double = sum(O_double), O_prev = sum(O_
         paste0(g, sprintf("orphan_incidence_%s.RDS", surv_source)))
 saveRDS(prev_unit, paste0(g, sprintf("orphan_prevalence_%s.RDS", surv_source)))
 
-# Objects used by the figures below. Years before 2007 lack children born
-# before 1990 (no fertility data), so they undercount the oldest ages.
-INCOMPLETE_NOTE <- "2005-2006: children aged 16-17 not covered (births before 1990 not in the data)."
+# Objects used by the figures below. Years before ORPHAN_REPORT_FROM (2007) lack
+# children born before 1990 (no fertility data), so they are not reported.
 fertility_df <- as.data.frame(fert[, .(group_id, year, sex, age, births, population,
                                        fertility_rate = fert_rate)])
 saveRDS(fertility_df, "input-data-processed/fertility_df.RDS")   # read by ch5_030
@@ -84,11 +83,11 @@ O_lifetime       <- prev_unit[, .(Olifetime = sum(O_life)), by = .(year, child_a
 O_lifetime_sex   <- prev_unit[, .(Olifetime = sum(O_life)), by = .(year, sex, child_age)]
 O_lifetime_total <- prev_unit[, .(Olifetime = sum(O_life)), by = year][order(year)]
 
-O_new_tot        <- O_new_tot[year >= 2005]
-O_new_sex        <- O_new_sex[year >= 2005]
-O_lifetime       <- O_lifetime[year >= 2005]
-O_lifetime_sex   <- O_lifetime_sex[year >= 2005]
-O_lifetime_total <- O_lifetime_total[year >= 2005]
+O_new_tot        <- O_new_tot[year >= ORPHAN_REPORT_FROM]
+O_new_sex        <- O_new_sex[year >= ORPHAN_REPORT_FROM]
+O_lifetime       <- O_lifetime[year >= ORPHAN_REPORT_FROM]
+O_lifetime_sex   <- O_lifetime_sex[year >= ORPHAN_REPORT_FROM]
+O_lifetime_total <- O_lifetime_total[year >= ORPHAN_REPORT_FROM]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -102,7 +101,7 @@ library(patchwork)
 p_incidence <- ggplot(O_new_tot, aes(year, O_new)) +
   geom_col(fill = "#0072B2", width = 0.6) +
   scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) +
-  labs(caption = INCOMPLETE_NOTE, title = "Incidence of Orphanhood (new cases)",
+  labs(title = "Incidence of Orphanhood (new cases)",
        y = "New orphans", x = NULL) +
   theme_minimal()
 
@@ -120,7 +119,7 @@ p_incidence_line <- ggplot(inc_plot, aes(year, incidence)) +
     limits = c(50000, NA),                                   # ← starts at 0
     labels  = label_number(scale_cut = cut_short_scale())
   ) +
-  labs(caption = INCOMPLETE_NOTE, title = "Incidence of Orphanhood (new cases)",
+  labs(title = "Incidence of Orphanhood (new cases)",
        y = "New orphans", x = NULL) +
   theme_minimal()
 ggsave(file.path(fig_dir, "ch5_020_incidence_line.pdf"), p_incidence_line, width = 8, height = 6)
@@ -227,14 +226,14 @@ library(scales)
 
 ## 1️⃣  Collapse new-orphan counts to one value per (year, sex)
 inc_orphans <- O_new_sex |>
-  filter(year >=2005) |>
+  filter(year >= ORPHAN_REPORT_FROM) |>
   group_by(year, sex) |>
   summarise(orphans = sum(O_new_sex, na.rm = TRUE), .groups = "drop") |>
   mutate(sex = recode(sex, female = "Mother", male = "Father"))
 
 ## 2️⃣  Total number of children alive in each calendar year
 pop_children_year <- population_children |>
-  filter(year >=2005) |>
+  filter(year >= ORPHAN_REPORT_FROM) |>
   group_by(year) |>
   summarise(children = sum(population, na.rm = TRUE), .groups = "drop")
 
@@ -255,7 +254,7 @@ p_incidence_rate_sex <- ggplot(rate_df, aes(year, rate_per_100, colour = sex, gr
     expand = expansion(mult = c(0, 0.05))
   ) +
   labs(
-    caption = INCOMPLETE_NOTE, title = "Incidence Rate of Orphanhood by Parent Sex",
+    title = "Incidence Rate of Orphanhood by Parent Sex",
     y     = "New orphans per 100 children",
     x     = NULL
   ) +
@@ -800,19 +799,19 @@ orphans_by_year_sex <- O_lifetime_sex %>%
   summarise(total_orphans = sum(Olifetime, na.rm = TRUE), .groups = "drop")
 
 pop_children_year <- pop_children_year |>
-  filter(year >= 2005)
+  filter(year >= ORPHAN_REPORT_FROM)
 
 orphans_rate <- orphans_by_year_sex %>%
   left_join(pop_children_year, by = "year") %>%
   mutate(rate_per_100 = (total_orphans / children) * 100) |>
-  filter(year >= 2005)
+  filter(year >= ORPHAN_REPORT_FROM)
 
 
 p_prevalence_rate_sex <- ggplot(orphans_rate, aes(x = year, y = rate_per_100, color = sex)) +
   geom_line(size = 1.2) +
   geom_point(size = 2) +
   labs(
-    caption = INCOMPLETE_NOTE, title = "Orphanhood Prevalence Rate per 100 Children",
+    title = "Orphanhood Prevalence Rate per 100 Children",
     x = "Year",
     y = "Rate per 100 Children",
     color = "Deceased Parent"
@@ -858,7 +857,7 @@ orphan_rate_by_age <- orphans_by_year_age %>%
 
 orphan_rate_by_age <- orphan_rate_by_age %>%
   mutate(age_group = factor(age_group, levels = c("0-4", "5-9", "10-17")))|>
-  filter(year >= 2005)
+  filter(year >= ORPHAN_REPORT_FROM)
 
 p_prevalence_rate_age <- ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_100, color = age_group)) +
   geom_line(size = 1.2) +
@@ -868,7 +867,7 @@ p_prevalence_rate_age <- ggplot(orphan_rate_by_age, aes(x = year, y = rate_per_1
     name = "Age of child",
     labels = c("0–4 years", "5–9 years", "10–17 years"))+
   labs(
-    caption = INCOMPLETE_NOTE, title = "Orphanhood Prevalence Rate per 100 Children by Age Group",
+    title = "Orphanhood Prevalence Rate per 100 Children by Age Group",
     x = "Year",
     y = "Rate per 100 Children",
     color = "Age Group"
@@ -1058,11 +1057,10 @@ vars <- c(
 # std_mort_rate, poverty_index) are computed earlier in this script as separate
 # per-group objects (map_data_rate, the std-rate summaries, marg_index) but are
 # not yet merged onto the grouped geometry here. Until that merge is wired, skip
-# the spatial-correlation / Fig-18 four-panel + Moran/LISA block gracefully — all
-# the incidence/prevalence results and the orphanhood choropleth above are
-# already produced.
+# the Spearman + Moran/LISA block gracefully — all the incidence/prevalence results,
+# the orphanhood choropleth and the Fig 18 panels above are already produced.
 if (!all(unlist(vars) %in% names(muni))) {
-  message("ch5_020: spatial-correlation / Fig 18 (poverty–orphanhood panels + Moran/LISA) ",
+  message("ch5_020: spatial correlation (Spearman + Moran/LISA) ",
           "skipped — orphan_rate/std_fert_rate/std_mort_rate/poverty_index are not yet ",
           "merged onto the grouped geometry (TODO: join map_data_rate + std-rate ",
           "summaries + marg_index by group_id). Main results above were produced.")
