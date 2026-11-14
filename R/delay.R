@@ -73,6 +73,149 @@ plot_delay_bars <- function(d, col_x, col_y, pal, ..., limits = NULL, percent = 
 }
 
 # --- Delay vs deprivation, per year -----------------------------------------------
+# Joins unit mean delay to a deprivation index file and adds, within each year,
+# the standardised deprivation (-IMN), the 0-100 score and the deprivation decile.
+# Years past the index's last year carry its last value forward.
+with_depriv <- function(unit_delay, file, label, years) {
+  readRDS(file.path("input-data-processed", file)) |>
+    extend_marg_years(years) |>
+    dplyr::filter(year %in% years) |>
+    dplyr::inner_join(unit_delay, by = c("group_id", "year")) |>
+    dplyr::group_by(year) |>
+    dplyr::mutate(score = 100 * (1 - IMN),
+                  depriv = -as.numeric(scale(IMN)),
+                  decile = factor(dplyr::ntile(depriv, 10),
+                                  labels = c("1\nleast", 2:9, "10\nmost"))) |>
+    dplyr::ungroup() |>
+    dplyr::mutate(index = label)
+}
+
+# Mean delay by deprivation decile over every occurrence year (fixed-weight index,
+# 2020 values carried forward). An occurrence year y has only (last_reg - y) years
+# of registrations, so recent years are shaded: their long delays are not yet seen.
+plot_delay_decile_years <- function(unit_delay, what, years = 1990:2023, last_reg = 2024,
+                                    min_followup = 5) {
+  d <- with_depriv(unit_delay, "index_grouped_mun_fw.RDS", "Fixed-weight", years) |>
+    dplyr::group_by(year, decile) |>
+    dplyr::summarise(delay_days = mean(delay_days), .groups = "drop") |>
+    dplyr::mutate(decile = factor(as.integer(decile), labels = c("1 (least)", 2:9, "10 (most)")))
+  ends <- dplyr::filter(d, year == max(year), decile %in% c("1 (least)", "10 (most)"))
+  ggplot2::ggplot(d, ggplot2::aes(year, delay_days, colour = decile, group = decile)) +
+    ggplot2::annotate("rect", xmin = last_reg - min_followup + 0.5, xmax = Inf, ymin = -Inf, ymax = Inf,
+                      fill = "grey92") +
+    ggplot2::annotate("text", x = last_reg - min_followup + 0.7, y = Inf, vjust = 1.5, hjust = 0, size = 3,
+                      colour = "grey35", label = sprintf("< %d years of\nregistrations", min_followup)) +
+    ggplot2::geom_vline(xintercept = 2020, linetype = "dashed", colour = "grey55", linewidth = 0.3) +
+    ggplot2::geom_line(linewidth = 0.6) + ggplot2::geom_point(size = 1) +
+    ggplot2::geom_text(data = ends, ggplot2::aes(label = decile), hjust = -0.15, size = 3,
+                       show.legend = FALSE) +
+    ggplot2::scale_colour_viridis_d(option = "magma", begin = 0.15, end = 0.8, direction = -1) +
+    ggplot2::scale_x_continuous(breaks = seq(1990, max(years), 5), minor_breaks = years,
+                                expand = ggplot2::expansion(add = c(0.5, 3))) +
+    ggplot2::labs(title = "Mean registration delay by deprivation decile, every year",
+                  subtitle = paste("Average over the units in each decile (within year) of their mean delay",
+                                   sprintf("(days from %s to registration; delay recorded in whole years).", what),
+                                   "Fixed-weight index; 2021+ uses each unit's 2020 value. Dashed line: 2020.",
+                                   sep = "\n"),
+                  x = paste("Year of", what), y = "Mean registration delay (days)",
+                  colour = "Deprivation decile") +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1))
+}
+
+# Cumulative share registered within d = 0..max_d years of occurrence, by
+# deprivation decile (fixed-weight index, within year; 2021+ carries 2020) and
+# occurrence year. Events are pooled over the units of a decile. The denominator
+# is every registration up to `last_reg`, so years with < min_followup years of
+# registrations overstate completeness. `df` holds group_id, year, year_reg and
+# `count`. Returns year, decile, d, share.
+decile_cumulative <- function(df, count, years, max_d) {
+  cells <- df |>
+    dplyr::filter(!is.na(group_id)) |>
+    add_delay(bucket = FALSE) |>
+    dplyr::mutate(year = as.integer(year)) |>
+    dplyr::filter(year %in% years) |>
+    dplyr::group_by(group_id, year, delay) |>
+    dplyr::summarise(n = sum(.data[[count]]), .groups = "drop")
+  deciles <- with_depriv(dplyr::distinct(cells, group_id, year), "index_grouped_mun_fw.RDS",
+                         "Fixed-weight", years) |>
+    dplyr::select(group_id, year, decile)
+  cells |>
+    dplyr::inner_join(deciles, by = c("group_id", "year")) |>
+    dplyr::group_by(year, decile) |>
+    dplyr::reframe(d = 0:max_d, share = sapply(0:max_d, \(k) sum(n[delay <= k]) / sum(n))) |>
+    dplyr::mutate(decile = factor(as.integer(decile), labels = c("1 (least)", 2:9, "10 (most)")))
+}
+
+# Facets d = 0..max_d of decile_cumulative(); d = 0 is "registered in the same
+# calendar year". Shaded: occurrence years with < min_followup years of registrations.
+plot_cumulative_by_decile <- function(df, count, what, years = 1990:2023, max_d = 7,
+                                      last_reg = 2024, min_followup = 10) {
+  d <- decile_cumulative(df, count, years, max_d) |>
+    dplyr::mutate(d = factor(d, labels = c("Same calendar year", "By the next year",
+                                           sprintf("Within %d years", seq_len(max_d - 1) + 1))))
+  ggplot2::ggplot(d, ggplot2::aes(year, share, colour = decile, group = decile)) +
+    ggplot2::annotate("rect", xmin = last_reg - min_followup + 0.5, xmax = Inf, ymin = -Inf, ymax = Inf,
+                      fill = "grey92") +
+    ggplot2::geom_hline(yintercept = c(0.90, 0.95, 0.98), linetype = "dotted", colour = "grey40",
+                        linewidth = 0.3) +
+    ggplot2::geom_line(linewidth = 0.5) + ggplot2::geom_point(size = 0.6) +
+    ggplot2::facet_wrap(~d, ncol = 4) +
+    ggplot2::scale_colour_viridis_d(option = "magma", begin = 0.15, end = 0.8, direction = -1) +
+    ggplot2::scale_y_continuous(labels = scales::label_percent(accuracy = 0.1, drop0trailing = TRUE)) +
+    ggplot2::scale_x_continuous(breaks = seq(1990, max(years), 10)) +
+    ggplot2::labs(title = sprintf("Share of %ss registered within d years, by deprivation decile", what),
+                  subtitle = paste(sprintf("Share of %ss registered by %d that were registered within d calendar years of occurrence.",
+                                           what, last_reg),
+                                   "Events pooled over the units in each decile (within year). Dotted lines: 90%, 95%, 98%.",
+                                   sprintf("Shaded: < %d years of registrations, so the denominator is still growing and shares are overstated.",
+                                           min_followup),
+                                   "Fixed-weight index; 2021+ uses each unit's 2020 value.", sep = "\n"),
+                  x = paste("Year of", what), y = "Cumulative share registered",
+                  colour = "Deprivation decile") +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1))
+}
+
+# Years until 90/95/98% of a decile's events are registered: the smallest whole
+# delay d whose cumulative share (decile_cumulative()) reaches the threshold. Delays
+# are whole calendar years, so the quantile is an integer; lines are offset
+# vertically by decile so ties stay visible. An occurrence year y cannot show a
+# quantile above last_reg - y, hence the shading.
+plot_quantile_by_decile <- function(df, count, what, years = 1990:2023, probs = c(0.90, 0.95, 0.98),
+                                    last_reg = 2024, min_followup = 10, offset = 0.04) {
+  d <- decile_cumulative(df, count, years, max_d = last_reg - min(years)) |>
+    tidyr::crossing(p = probs) |>
+    dplyr::filter(share >= p - 1e-9) |>
+    dplyr::group_by(year, decile, p) |>
+    dplyr::summarise(q = min(d), .groups = "drop") |>
+    dplyr::mutate(q_plot = q + (as.integer(decile) - 5.5) * offset,
+                  p = factor(p, labels = sprintf("%g%% registered", 100 * probs)))
+  ggplot2::ggplot(d, ggplot2::aes(year, q_plot, colour = decile, group = decile)) +
+    ggplot2::annotate("rect", xmin = last_reg - min_followup + 0.5, xmax = Inf, ymin = -Inf, ymax = Inf,
+                      fill = "grey92") +
+    ggplot2::geom_step(direction = "mid", linewidth = 0.5) +
+    ggplot2::facet_wrap(~p, nrow = 1) +
+    ggplot2::scale_colour_viridis_d(option = "magma", begin = 0.15, end = 0.8, direction = -1) +
+    ggplot2::scale_y_continuous(breaks = 0:max(d$q), minor_breaks = NULL) +
+    ggplot2::scale_x_continuous(breaks = seq(1990, max(years), 10)) +
+    ggplot2::labs(title = sprintf("Years until 90/95/98%% of %ss are registered, by deprivation decile", what),
+                  subtitle = paste(sprintf("Smallest whole delay (calendar years after the %s) by which the share is reached; 0 = same calendar year.",
+                                           what),
+                                   sprintf("Denominator: all registrations up to %d. Events pooled over the units in each decile (within year).",
+                                           last_reg),
+                                   "Lines offset slightly by decile so equal values stay visible.",
+                                   sprintf("Shaded: < %d years of registrations, so quantiles are understated. Fixed-weight index; 2021+ uses 2020 values.",
+                                           min_followup), sep = "\n"),
+                  x = paste("Year of", what), y = "Years until registered",
+                  colour = "Deprivation decile") +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1))
+}
+
 # Mean registration delay per unit-year, weighted by events, in DAYS (delay is
 # recorded in whole years; x 365 for readability, not precision). `df` holds
 # group_id, year, year_reg and the event column `count`; one row per cell.
@@ -98,21 +241,8 @@ unit_mean_delay <- function(df, count, years = 1990:2020) {
 # of that index shrinks from ~15 (1990) to ~6 (2020), so per-SD slopes fall
 # over time even at a constant per-point slope.
 delay_vs_deprivation <- function(unit_delay, what, years = 1990:2020) {
-  with_depriv <- function(file, label) {
-    readRDS(file.path("input-data-processed", file)) |>
-      extend_marg_years(years) |>
-      dplyr::filter(year %in% years) |>
-      dplyr::inner_join(unit_delay, by = c("group_id", "year")) |>
-      dplyr::group_by(year) |>
-      dplyr::mutate(score = 100 * (1 - IMN),
-                    depriv = -as.numeric(scale(IMN)),
-                    decile = factor(dplyr::ntile(depriv, 10),
-                                    labels = c("1\nleast", 2:9, "10\nmost"))) |>
-      dplyr::ungroup() |>
-      dplyr::mutate(index = label)
-  }
-  dep <- dplyr::bind_rows(with_depriv("index_grouped_mun_fw.RDS", "Fixed-weight"),
-                          with_depriv("index_grouped_mun.RDS", "CONAPO (2010 carried back)"))
+  dep <- dplyr::bind_rows(with_depriv(unit_delay, "index_grouped_mun_fw.RDS", "Fixed-weight", years),
+                          with_depriv(unit_delay, "index_grouped_mun.RDS", "CONAPO (2010 carried back)", years))
   slopes <- dep |>
     dplyr::group_by(index, year) |>
     dplyr::group_modify(~ {

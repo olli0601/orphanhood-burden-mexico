@@ -207,7 +207,7 @@ municipalities missing from the grouping are dropped.
 | 6 | `ch3_050_deaths_delay_by_occurrence.pdf` | **row-count bug (3.7)** |
 | 7 | none | **MISSING** |
 | 8 | `ch3_050_births_delay_by_mpi_category.pdf` | not as captioned (3.13) |
-| 9 | `ch3_040_delay_by_marg.pdf` | unweighted mean; axis says "days" |
+| 9 | `ch3_040_deaths_delay_by_marg.pdf` | unweighted mean; axis says "days" |
 | 10, 11 | none | **MISSING** |
 | 12, 13 | `ch4_030` barplots | dark bars = delay-0 only; CI = summed bounds |
 | 14a–d | `ch4_040`, four separate PDFs | sign flipped; uses corrected predictions |
