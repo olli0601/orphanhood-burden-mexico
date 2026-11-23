@@ -201,7 +201,8 @@ plot_quantile_by_decile <- function(df, count, what, years = 1990:2023, probs = 
     ggplot2::scale_colour_viridis_d(option = "magma", begin = 0.15, end = 0.8, direction = -1) +
     ggplot2::scale_y_continuous(breaks = 0:max(d$q), minor_breaks = NULL) +
     ggplot2::scale_x_continuous(breaks = seq(1990, max(years), 10)) +
-    ggplot2::labs(title = sprintf("Years until 90/95/98%% of %ss are registered, by deprivation decile", what),
+    ggplot2::labs(title = sprintf("Years until %s%% of %ss are registered, by deprivation decile",
+                                  paste(100 * probs, collapse = "/"), what),
                   subtitle = paste(sprintf("Smallest whole delay (calendar years after the %s) by which the share is reached; 0 = same calendar year.",
                                            what),
                                    sprintf("Denominator: all registrations up to %d. Events pooled over the units in each decile (within year).",
@@ -214,6 +215,131 @@ plot_quantile_by_decile <- function(df, count, what, years = 1990:2023, probs = 
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(legend.position = "bottom") +
     ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1))
+}
+
+# --- Delay in days (birth cohorts; ch1_013) ----------------------------------------
+# Births by deprivation decile x year of birth x days to registration, from the
+# ch1_013 table (`df`: group_id, year, delay_days, births). Deciles as in
+# decile_cumulative(). Births with no valid delay are dropped (shares are of
+# births with both dates known). by_month = TRUE keeps the month of birth
+# (`df` then also holds `month`); deciles are still assigned within year.
+decile_days <- function(df, years, by_month = FALSE) {
+  t <- c("year", if (by_month) "month")
+  cells <- df |>
+    dplyr::filter(!is.na(group_id), !is.na(delay_days), year %in% years) |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(c("group_id", t, "delay_days")))) |>
+    dplyr::summarise(births = sum(births), .groups = "drop")
+  deciles <- with_depriv(dplyr::distinct(cells, group_id, year), "index_grouped_mun_fw.RDS",
+                         "Fixed-weight", years) |>
+    dplyr::select(group_id, year, decile)
+  cells |>
+    dplyr::inner_join(deciles, by = c("group_id", "year")) |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(c(t, "decile", "delay_days")))) |>
+    dplyr::summarise(births = sum(births), .groups = "drop") |>
+    dplyr::mutate(decile = factor(as.integer(decile), labels = c("1 (least)", 2:9, "10 (most)")))
+}
+
+# Shaded band and decile colours shared by the days plots. The band spans
+# [ymin, ymax]: -Inf turns into NaN on a log axis, so pass finite limits there.
+days_layers <- function(last_reg, min_followup, ymin = -Inf, ymax = Inf) list(
+  ggplot2::annotate("rect", xmin = last_reg - min_followup + 0.5, xmax = Inf, ymin = ymin, ymax = ymax,
+                    fill = "grey92"),
+  ggplot2::scale_colour_viridis_d(option = "magma", begin = 0.15, end = 0.8, direction = -1),
+  ggplot2::theme_minimal(base_size = 11),
+  ggplot2::theme(legend.position = "bottom"),
+  ggplot2::guides(colour = ggplot2::guide_legend(nrow = 1)))
+
+# Share of a birth cohort registered within d days, by decile; the days analogue
+# of plot_cumulative_by_decile(). Denominator: every registration up to last_reg.
+plot_cumulative_days_by_decile <- function(dd, what = "birth", cutoffs = c(30, 60, 90, 180, 365, 730, 1095, 1826),
+                                           last_reg = 2024, min_followup = 10) {
+  lab <- function(k) dplyr::case_when(k < 365 ~ sprintf("Within %d days", k),
+                                      k == 365 ~ "Within 365 days",
+                                      TRUE ~ sprintf("Within %d days (%g yr)", k, round(k / 365.25)))
+  d <- dd |>
+    dplyr::group_by(year, decile) |>
+    dplyr::reframe(d = cutoffs, share = sapply(cutoffs, \(k) sum(births[delay_days <= k]) / sum(births))) |>
+    dplyr::mutate(d = factor(d, levels = cutoffs, labels = lab(cutoffs)))
+  ggplot2::ggplot(d, ggplot2::aes(year, share, colour = decile, group = decile)) +
+    days_layers(last_reg, min_followup) +
+    ggplot2::geom_hline(yintercept = c(0.90, 0.95, 0.98), linetype = "dotted", colour = "grey40",
+                        linewidth = 0.3) +
+    ggplot2::geom_line(linewidth = 0.5) + ggplot2::geom_point(size = 0.6) +
+    ggplot2::facet_wrap(~d, ncol = 4) +
+    ggplot2::scale_y_continuous(labels = scales::label_percent(accuracy = 1)) +
+    ggplot2::scale_x_continuous(breaks = seq(2000, max(d$year), 5)) +
+    ggplot2::labs(title = sprintf("Share of %ss registered within d days of the %s, by deprivation decile", what, what),
+                  subtitle = paste(sprintf("Birth cohorts: of the %ss in a year registered by %d, the share registered within d days.",
+                                           what, last_reg),
+                                   "Events pooled over the units in each decile (within year). Dotted lines: 90%, 95%, 98%.",
+                                   sprintf("Shaded: < %d years of registrations, so the denominator is still growing and shares are overstated.",
+                                           min_followup),
+                                   "Fixed-weight index; 2021+ uses each unit's 2020 value.", sep = "\n"),
+                  x = paste("Year of", what), y = "Cumulative share registered",
+                  colour = "Deprivation decile")
+}
+
+# Days until p of a decile's cohort is registered: the smallest delay d whose
+# cumulative share reaches p. Log y axis; same denominator and shading as above.
+plot_quantile_days_by_decile <- function(dd, what = "birth", p = 0.95, last_reg = 2024, min_followup = 10) {
+  d <- dd |>
+    dplyr::arrange(year, decile, delay_days) |>
+    dplyr::group_by(year, decile) |>
+    dplyr::summarise(q = delay_days[which(cumsum(births) >= p * sum(births) - 1e-9)[1]], .groups = "drop")
+  brk <- c(7, 14, 30, 60, 90, 180, 365, 730, 1095, 1826, 3652)
+  ggplot2::ggplot(d, ggplot2::aes(year, q, colour = decile, group = decile)) +
+    days_layers(last_reg, min_followup, ymin = min(d$q) / 1.1, ymax = max(d$q) * 1.1) +
+    ggplot2::geom_line(linewidth = 0.6) + ggplot2::geom_point(size = 0.8) +
+    ggplot2::scale_y_log10(breaks = brk, minor_breaks = NULL, expand = c(0, 0)) +
+    ggplot2::scale_x_continuous(breaks = seq(2000, max(d$year), 5)) +
+    ggplot2::labs(title = sprintf("Days until %g%% of %ss are registered, by deprivation decile", 100 * p, what),
+                  subtitle = paste(sprintf("Smallest number of days after the %s by which %g%% of the cohort's registrations (up to %d) are made.",
+                                           what, 100 * p, last_reg),
+                                   "Events pooled over the units in each decile (within year). Log scale.",
+                                   sprintf("Shaded: < %d years of registrations, so quantiles are understated. Fixed-weight index; 2021+ uses 2020 values.",
+                                           min_followup), sep = "\n"),
+                  x = paste("Year of", what), y = "Days until registered (log scale)",
+                  colour = "Deprivation decile")
+}
+
+# Months until 90/95/98% of a decile's cohort is registered: the monthly analogue
+# of plot_quantile_by_decile(). Delay is in completed months of age,
+# floor(delay_days / 30.4375), so 0 = registered within the first month; the
+# quantile is the smallest such month whose cumulative share reaches p. Same
+# denominator and shading as the days plots. Facets have free y scales.
+# If `dd` holds `month` (decile_days(by_month = TRUE)), cohorts are months of
+# birth, plotted at year + (month - 0.5) / 12; births with unknown month are dropped.
+plot_quantile_months_by_decile <- function(dd, what = "birth", probs = c(0.90, 0.95, 0.98),
+                                           last_reg = 2024, min_followup = 10) {
+  by_month <- "month" %in% names(dd)
+  t <- c("year", if (by_month) "month")
+  d <- dd |>
+    dplyr::filter(if (by_month) !is.na(month) else TRUE) |>
+    dplyr::mutate(m = floor(delay_days / 30.4375)) |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(c(t, "decile", "m")))) |>
+    dplyr::summarise(births = sum(births), .groups = "drop") |>
+    dplyr::arrange(dplyr::across(dplyr::all_of(c(t, "decile", "m")))) |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(c(t, "decile")))) |>
+    dplyr::reframe(p = probs,
+                   q = sapply(probs, \(pr) m[which(cumsum(births) >= pr * sum(births) - 1e-9)[1]])) |>
+    dplyr::mutate(p = factor(p, labels = sprintf("%g%% registered", 100 * probs)),
+                  x = if (by_month) year + (month - 0.5) / 12 else year)
+  ggplot2::ggplot(d, ggplot2::aes(x, q, colour = decile, group = decile)) +
+    days_layers(last_reg, min_followup) +
+    (if (by_month) ggplot2::geom_line(linewidth = 0.3)
+     else list(ggplot2::geom_line(linewidth = 0.5), ggplot2::geom_point(size = 0.6))) +
+    ggplot2::facet_wrap(~p, nrow = 1, scales = "free_y") +
+    ggplot2::scale_y_continuous(breaks = seq(0, 240, 12), minor_breaks = seq(0, 240, 6)) +
+    ggplot2::scale_x_continuous(breaks = seq(2000, max(d$year), 5)) +
+    ggplot2::labs(title = sprintf("Months until %s%% of %ss are registered, by deprivation decile",
+                                  paste(100 * probs, collapse = "/"), what),
+                  subtitle = paste(sprintf("Smallest number of completed months after the %s (days / 30.44) by which the share of the %s cohort's registrations (up to %d) is reached.",
+                                           what, if (by_month) "monthly" else "yearly", last_reg),
+                                   "Events pooled over the units in each decile (within year). Gridlines every 12 months.",
+                                   sprintf("Shaded: < %d years of registrations, so quantiles are understated. Fixed-weight index; 2021+ uses 2020 values.",
+                                           min_followup), sep = "\n"),
+                  x = paste(if (by_month) "Month of" else "Year of", what), y = "Months until registered",
+                  colour = "Deprivation decile")
 }
 
 # Mean registration delay per unit-year, weighted by events, in DAYS (delay is

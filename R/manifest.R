@@ -112,15 +112,18 @@ table_manifest_get <- function(path, id) {
   if (!nrow(r)) NULL else as.list(r[1, ])
 }
 
-# Verify a saved per-year panel against its tabular-manifest entry.
+# Verify a saved per-year panel against its tabular-manifest entry, and that it
+# holds the columns `cols` (so a file from an older schema is rebuilt, not skipped).
 # Returns list(ok, reason, rows, total).
-panel_manifest_check <- function(path, id, value_col, manifest) {
+panel_manifest_check <- function(path, id, value_col, manifest, cols = NULL) {
   fail <- function(reason) list(ok = FALSE, reason = reason, rows = NA_real_, total = NA_real_)
   if (!file.exists(path)) return(fail("missing"))
   rec <- table_manifest_get(manifest, id)
   if (is.null(rec)) return(fail("no manifest entry"))
   d <- tryCatch(readRDS(path), error = function(e) e)
   if (inherits(d, "error")) return(fail(paste("unreadable:", conditionMessage(d))))
+  miss <- setdiff(cols, names(d))
+  if (length(miss)) return(fail(paste("missing columns:", paste(miss, collapse = ", "))))
   n <- sum(d[[value_col]], na.rm = TRUE)
   if (nrow(d) != rec$rows || !isTRUE(all.equal(n, rec$total)))
     return(fail(sprintf("expected %s rows / %s %s, found %s / %s",

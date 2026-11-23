@@ -109,6 +109,8 @@ save_fig(plot_cumulative_by_decile(filter(births_grouped_mun, sex == "female"), 
          "ch3_050_births_cumulative_by_decile.pdf", 13, 9)
 save_fig(plot_quantile_by_decile(filter(births_grouped_mun, sex == "female"), "births", "birth"),
          "ch3_050_births_quantile_by_decile.pdf", 13, 5.5)
+save_fig(plot_quantile_by_decile(filter(births_grouped_mun, sex == "female"), "births", "birth", probs = 0.95),
+         "ch3_050_births_quantile95_by_decile.pdf", 9, 5.5)
 
 # --- Thesis §3.3: cumulative registration, completeness, mean delay ------------
 # Counts are events throughout; births use mother rows only.

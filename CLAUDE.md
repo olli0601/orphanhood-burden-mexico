@@ -50,6 +50,7 @@ Re-running one script in isolation can silently change downstream results.
 ch1_010  download / locate raw inputs (network)      (manifest-cached)
 ch1_011  extract .tar.zst archives + births .zip     (manifest-cached; was 13 GB/run)
 ch1_012  raw microdata -> per-year panels            (manifest-cached; ~11 min cold, ~8 s warm)
+ch1_013  raw births -> days from birth to registration, reg. years 1998-2024 (manifest-cached; ~6 min)
 ch1_020  verify everything above in seconds — RUN THIS INSTEAD of re-running ch1_010..012
 ch1_015  panels -> births/deaths/population/geo_info/marg_index
 ch2_010  contiguity grouping of municipalities into >=50k analytical units
@@ -63,6 +64,7 @@ ch3_020  fertility by grouped municipality
 ch3_030  EDA: standardised rates, urban/rural, marginalization
 ch3_040  death registration-delay structure vs deprivation
 ch3_050  birth and death delay vs rates and deprivation
+ch3_051  birth delay in DAYS by birth cohort x deprivation decile (needs ch1_013)
 ch3_060  national age-specific rates, TFR, 18-year cumulative fertility (no nowcast)
 ch4_010..050  GAM birth nowcast: fit/validate -> bias-correct -> barplots -> diagnostics
               -> assemble. Needs `mkdir -p output/ch4` first (no ch4 script creates it)
