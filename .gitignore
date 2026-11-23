@@ -19,7 +19,7 @@ input-data-raw/births/*202[0-4]*
 # Generated outputs (plots, model objects, etc.)
 output/
 reports/
-research-notes/
+research_notes/
 
 # R default graphics device dump (created at cwd by Rscript when a plot is
 # print()ed without an explicit device; figures are saved explicitly via ggsave)
